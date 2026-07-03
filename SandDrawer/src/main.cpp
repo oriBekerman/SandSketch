@@ -15,15 +15,21 @@ namespace {
 constexpr int kInitialWidth = 1200;
 constexpr int kInitialHeight = 800;
 constexpr int kCanvasMargin = 24;
-constexpr int kLeftPanelWidth = 276;
+constexpr int kLeftPanelWidth = 320;
 
 Rect canvas_bounds_for(int width, int height)
 {
+    // return {
+    //     kLeftPanelWidth,
+    //     kCanvasMargin,
+    //     width - kLeftPanelWidth - kCanvasMargin,
+    //     height - 2 * kCanvasMargin,
+    // };
     return {
-        kLeftPanelWidth,
-        kCanvasMargin,
-        width - kLeftPanelWidth - kCanvasMargin,
-        height - 2 * kCanvasMargin,
+    kLeftPanelWidth + kCanvasMargin,
+    kCanvasMargin,
+    width - kLeftPanelWidth - 2 * kCanvasMargin,
+    height - 2 * kCanvasMargin,
     };
 }
 
@@ -76,6 +82,8 @@ int main()
         mu_begin(&ui_context);
         panel.draw(&ui_context, panel_state);
         mu_end(&ui_context);
+
+        canvas.set_terrain_settings(panel_state.terrain);
 
         if (panel_state.clear_requested) {
             canvas.clear();

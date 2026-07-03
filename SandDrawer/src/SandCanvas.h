@@ -1,19 +1,20 @@
 #pragma once
 
 #include "Renderer.h"
+#include "TerrainSettings.h"
 
 class SandCanvas {
 public:
     void resize(Rect bounds);
     void clear();
+    void set_terrain_settings(TerrainSettings settings);
     void draw(Renderer& renderer) const;
 
     Rect bounds() const;
 
 private:
-    bool initOpenGL() const;
+    void drawTerrain(Renderer& renderer) const;
 
     Rect m_bounds = {};
-    mutable bool m_glTriedInit = false;
-    mutable bool m_glReady = false;
+    TerrainSettings m_terrainSettings = {};
 };

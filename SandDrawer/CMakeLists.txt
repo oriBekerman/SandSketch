@@ -38,14 +38,12 @@ add_executable(SandDrawer
     src/SandCanvas.h
     src/SandSimulation.cpp
     src/SandSimulation.h
+    src/TerrainSettings.h
     src/UI/SandPanel.cpp
     src/UI/SandPanel.h
 )
 
 target_link_libraries(SandDrawer PRIVATE minifb microui_lib)
-if (WIN32)
-    target_link_libraries(SandDrawer PRIVATE opengl32)
-endif()
 target_include_directories(SandDrawer PRIVATE
     src
     ${minifb_SOURCE_DIR}/include

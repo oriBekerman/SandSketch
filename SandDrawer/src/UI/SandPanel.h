@@ -1,4 +1,7 @@
 #pragma once
+#include "PanelControls.h"
+
+#include "TerrainSettings.h"
 
 extern "C" {
 #include "microui.h"
@@ -7,6 +10,7 @@ extern "C" {
 struct SandPanelState {
     mu_Real brush_size = 8.0f;
     mu_Real brush_strength = 50.0f;
+    TerrainSettings terrain = {};
     int paused = 0;
     bool clear_requested = false;
 };

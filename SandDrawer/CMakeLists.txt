@@ -39,6 +39,7 @@ add_executable(SandDrawer
     src/SandSimulation.cpp
     src/SandSimulation.h
     src/TerrainSettings.h
+    src/UI/PanelControls.h
     src/UI/SandPanel.cpp
     src/UI/SandPanel.h
 )

@@ -1,11 +1,18 @@
 #pragma once
 
 
+
 enum class TerrainType {
+    Flat,
     NaturalFBm,
     LargeDunes,
-    Flat,
     Rocky,
+};
+
+enum class SandType {
+    Sahara,
+    WhiteBeach,
+    RedDesert,  
 };
 
 enum class SurfacePattern {
@@ -16,8 +23,10 @@ enum class SurfacePattern {
 };
 
 
+
 struct TerrainSettings {
-    TerrainType terrain_type = TerrainType::NaturalFBm;
+    TerrainType env = TerrainType::NaturalFBm;
+    SandType sand_type = SandType::Sahara;
     SurfacePattern surface_pattern = SurfacePattern::WindRipples;
 
     float frequency = 0.28f;
@@ -31,3 +40,5 @@ struct TerrainSettings {
     float moisture = 0.0f;
     bool vignette = true;
 };
+
+

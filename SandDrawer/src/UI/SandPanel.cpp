@@ -65,24 +65,37 @@ const char* surface_pattern_name(SurfacePattern pattern)
     return "Unknown";
 }
 
+const char* sand_type_name(SandType type)
+{
+    switch (type) {
+    case SandType::Sahara:
+        return "Sahara";
+    case SandType::WhiteBeach:
+        return "White Beach";
+    case SandType::RedDesert:
+        return "Red Desert";
+    }
+    return "Unknown";
+}
+
 bool terrain_type_button(mu_Context* ctx, TerrainSettings& settings, TerrainType type)
 {
     char label[32] = {};
-    const bool selected = settings.terrain_type == type;
+    const bool selected = settings.env == type;
     std::snprintf(label, sizeof(label), selected ? "%s *" : "%s", terrain_type_name(type));
     if (!panel_controls::button(ctx, label)) {
         return false;
     }
-    const TerrainType previous = settings.terrain_type;
-    settings.terrain_type = type;
-    if (previous != settings.terrain_type) {
+    const TerrainType previous = settings.env;
+    settings.env = type;
+    if (previous != settings.env) {
         std::fprintf(
             stderr,
             "[SandPanel] Terrain Type %s -> %s\n",
             terrain_type_name(previous),
-            terrain_type_name(settings.terrain_type));
+            terrain_type_name(settings.env));
     }
-    return previous != settings.terrain_type;
+    return previous != settings.env;
 }
 
 bool surface_pattern_button(mu_Context* ctx, TerrainSettings& settings, SurfacePattern pattern)
@@ -103,6 +116,26 @@ bool surface_pattern_button(mu_Context* ctx, TerrainSettings& settings, SurfaceP
             surface_pattern_name(settings.surface_pattern));
     }
     return previous != settings.surface_pattern;
+}
+
+bool sand_type_button(mu_Context* ctx, TerrainSettings& settings, SandType type)
+{
+    char label[32] = {};
+    const bool selected = settings.sand_type == type;
+    std::snprintf(label, sizeof(label), selected ? "%s *" : "%s", sand_type_name(type));
+    if (!panel_controls::button(ctx, label)) {
+        return false;
+    }
+    const SandType previous = settings.sand_type;
+    settings.sand_type = type;
+    if (previous != settings.sand_type) {
+        std::fprintf(
+            stderr,
+            "[SandPanel] Sand Type %s -> %s\n",
+            sand_type_name(previous),
+            sand_type_name(settings.sand_type));
+    }
+    return previous != settings.sand_type;
 }
 
 }// namespace
@@ -172,6 +205,13 @@ void SandPanel::draw(mu_Context* ctx, SandPanelState& state, int viewport_width,
             terrain_type_button(ctx, state.terrain, TerrainType::LargeDunes);
             terrain_type_button(ctx, state.terrain, TerrainType::Flat);
             terrain_type_button(ctx, state.terrain, TerrainType::Rocky);
+            mu_end_treenode(ctx);
+        }
+
+        if (mu_begin_treenode_ex(ctx, "Sand Type", MU_OPT_EXPANDED)) {
+            sand_type_button(ctx, state.terrain, SandType::Sahara);
+            sand_type_button(ctx, state.terrain, SandType::WhiteBeach);
+            sand_type_button(ctx, state.terrain, SandType::RedDesert);
             mu_end_treenode(ctx);
         }
 

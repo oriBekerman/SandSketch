@@ -135,65 +135,77 @@ namespace {
     }
 
     //====== Terrain generation ======
-    float sandHeight(float x, float z, const TerrainSettings& settings)
+    float baseTerrainHeight(float x, float z, const TerrainSettings& settings)
     {
         const float amplitude = std::max(0.001f, settings.amplitude);
         const auto dune_space = rotate(x, z, -0.28f);
-        const auto ripple_space = rotate(x, z, 0.72f);
-        const auto cross_ripple_space = rotate(x, z, -0.95f);
+        switch (settings.terrain_type) 
+        {
+            case TerrainType::Flat:
+                return 0.0f;
 
-        const float broad_dunes = (fbm(dune_space[0] + 12.0f, dune_space[1] - 7.0f, settings) - 0.5f) * amplitude;
-        const float dune_ridges = ridge(fbm(dune_space[0] * 0.72f - 5.0f, dune_space[1] * 0.28f + 9.0f, settings.frequency * 1.4f, 0.46f, 2.15f, 4));
-        const float ripple_mod = 0.55f + fbm(ripple_space[0] + 31.0f, ripple_space[1] - 19.0f, settings.frequency * 3.0f, 0.5f, 2.0f, 3) * 0.75f;
-        const float directional_ripples = std::sin(ripple_space[0] * 11.0f + ripple_space[1] * 0.75f + dune_ridges * 1.8f) * 0.035f * ripple_mod;
-        const float fine_cross_ripples = std::sin(cross_ripple_space[0] * 23.0f + cross_ripple_space[1] * 1.4f) * 0.011f;
-        const float granular_noise = (fbm(x + 4.0f, z - 2.0f, 8.5f, 0.38f, 2.3f, 3) - 0.5f) * 0.025f;
+            case TerrainType::NaturalFBm: {
+                return (fbm(dune_space[0] + 12.0f,dune_space[1] - 7.0f,settings) - 0.5f) * amplitude;
+            }
 
-        return broad_dunes + (dune_ridges - 0.5f) * amplitude * 0.28f + directional_ripples + fine_cross_ripples + granular_noise;
+            case TerrainType::LargeDunes: {
+                float broad = (fbm(dune_space[0] + 12.0f,dune_space[1] - 7.0f,settings) - 0.5f) * amplitude;
+                float ridges = ridge(fbm(dune_space[0] * 0.72f - 5.0f,dune_space[1] * 0.28f + 9.0f,
+                    settings.frequency * 1.4f,0.46f,2.15f,4));
+                return broad + (ridges - 0.5f) * amplitude * 0.28f;
+            }
+
+            case TerrainType::Rocky: {
+                float n = fbm(x * 2.4f, z * 2.4f, settings);
+                return (ridge(n) - 0.5f) * amplitude * 1.2f;
+            }
+        }
+        return 0.0f;
     }
+
     float cheapPatternHeight(float x, float z, const TerrainSettings& settings)
     {
         const float strength = std::max(0.0f, settings.pattern_strength);
         const float scale = std::max(0.001f, settings.pattern_scale);
-        const auto warped_space = warped(x, z, 0.42f);
+        const auto ws = warped(x, z, 0.42f);
 
-        switch (std::clamp(settings.pattern, 0, 4)) {
-        case 1: {
-            const auto ripple_space = rotate(warped_space[0], warped_space[1], 0.72f);
-            const float phase_warp = centeredNoise(x * 1.15f + 33.0f, z * 1.15f - 17.0f) * 2.4f;
-            const float envelope = 0.65f + valueNoise(x * 0.48f - 8.0f, z * 0.48f + 6.0f) * 0.35f;
-            const float phase = ripple_space[0] * 8.2f * scale + ripple_space[1] * 1.18f + phase_warp;
-            const float primary = std::sin(phase) * 0.020f;
-            const float secondary = std::sin(phase * 1.73f + phase_warp * 0.35f) * 0.005f;
-            return softPattern((primary + secondary) * envelope, strength, 0.024f);
+        switch (settings.surface_pattern) {
+            case SurfacePattern::None:
+                return 0.0f;
+
+            case SurfacePattern::WindRipples: {
+                const auto p = rotate(ws[0], ws[1], 0.72f);
+                const float phase_warp = centeredNoise(x * 1.15f + 33.0f, z * 1.15f - 17.0f) * 2.4f;
+                const float envelope = 0.65f + valueNoise(x * 0.48f - 8.0f, z * 0.48f + 6.0f) * 0.35f;
+                const float phase = p[0] * 8.2f * scale + p[1] * 1.18f + phase_warp;
+                const float primary = std::sin(phase) * 0.020f;
+                const float secondary = std::sin(phase * 1.73f + phase_warp * 0.35f) * 0.005f;
+                return softPattern((primary + secondary) * envelope, strength, 0.024f);
+            }
+
+            case SurfacePattern::WaterRipples: {
+                const float d = std::sqrt(ws[0] * ws[0] + ws[1] * ws[1]);
+                const float wave = std::sin(d * 18.0f * scale) * 0.035f;
+                return softPattern(wave, strength, 0.04f);
+            }
+
+            case SurfacePattern::CrossRipples: {
+                const auto p1 = rotate(ws[0], ws[1], 0.72f);
+                const auto p2 = rotate(ws[0], ws[1], -0.95f);
+                const float a = std::sin(p1[0] * 10.0f * scale);
+                const float b = std::sin(p2[0] * 13.0f * scale);
+                return softPattern((a + b) * 0.018f, strength, 0.04f);
+            }
         }
-        case 2: {
-            const float distance = std::sqrt(warped_space[0] * warped_space[0] + warped_space[1] * warped_space[1]);
-            const float bowl = -std::exp(-distance * distance * 1.55f * scale) * 0.18f;
-            const float rim = std::exp(-std::pow((distance - 1.25f) * 3.4f * scale, 2.0f)) * 0.11f;
-            return softPattern(bowl + rim, strength, 0.16f);
-        }
-        case 3: {
-            const auto dune_space = rotate(warped_space[0], warped_space[1], -0.28f);
-            const float phase = dune_space[0] * 1.65f * scale + dune_space[1] * 0.46f + centeredNoise(x * 0.55f, z * 0.55f) * 1.2f;
-            const float ridge_wave = 0.5f + 0.5f * std::sin(phase);
-            return softPattern((ridge(ridge_wave) - 0.5f) * 0.16f, strength, 0.075f);
-        }
-        case 4: {
-            const auto wave_space = rotate(warped_space[0], warped_space[1], 0.18f);
-            const float phase = wave_space[0] * 3.25f * scale + std::sin(wave_space[1] * 1.35f * scale) * 0.65f;
-            return softPattern(std::sin(phase) * 0.055f, strength, 0.045f);
-        }
-        default:
-            return 0.0f;
-        }
+        return 0.0f;
     }
 
     //======Setting comparison======
     bool sameBaseSettings(const TerrainSettings& a, const TerrainSettings& b)
     {
         constexpr float epsilon = 0.0001f;
-        return std::abs(a.frequency - b.frequency) < epsilon &&
+        return a.terrain_type == b.terrain_type &&
+            std::abs(a.frequency - b.frequency) < epsilon &&
             std::abs(a.amplitude - b.amplitude) < epsilon &&
             std::abs(a.persistence - b.persistence) < epsilon &&
             std::abs(a.lacunarity - b.lacunarity) < epsilon &&
@@ -203,7 +215,7 @@ namespace {
     bool samePatternSettings(const TerrainSettings& a, const TerrainSettings& b)
     {
         constexpr float epsilon = 0.0001f;
-        return a.pattern == b.pattern &&
+        return a.surface_pattern == b.surface_pattern &&
             std::abs(a.pattern_strength - b.pattern_strength) < epsilon &&
             std::abs(a.pattern_scale - b.pattern_scale) < epsilon;
     }
@@ -333,7 +345,6 @@ void SandCanvas::set_terrain_settings(TerrainSettings settings)
     settings.lacunarity = std::max(0.001f, settings.lacunarity);
     settings.octaves = std::clamp(settings.octaves, 1, 8);
     settings.vignette = settings.vignette != 0 ? 1 : 0;
-    settings.pattern = std::clamp(settings.pattern, 0, 4);
     settings.pattern_strength = std::max(0.0f, settings.pattern_strength);
     settings.pattern_scale = std::max(0.001f, settings.pattern_scale);
     settings.moisture = std::clamp(settings.moisture, 0.0f, 1.0f);
@@ -343,14 +354,15 @@ void SandCanvas::set_terrain_settings(TerrainSettings settings)
     const bool final_changed = !sameFinalSettings(m_terrainSettings, settings);
 
     m_terrainSettings = settings;
+
     if (base_changed) {
         m_baseDirty = true;
         m_patternDirty = true;
-        markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
     } else if (pattern_changed) {
         m_patternDirty = true;
-        markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
-    } else if (final_changed) {
+    }
+
+    if (base_changed || pattern_changed || final_changed) {
         markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
     }
 }
@@ -401,13 +413,11 @@ void SandCanvas::rebuildBaseHeight() const
         return;
     }
 
-    const float amplitude = std::max(0.001f, m_terrainSettings.amplitude);
     for (int y = 0; y < m_cacheHeight; ++y) {
         const float z = worldZ(y);
         const size_t row = static_cast<size_t>(y) * static_cast<size_t>(m_cacheWidth);
         for (int x = 0; x < m_cacheWidth; ++x) {
-            const auto dune_space = rotate(worldX(x), z, -0.28f);
-            m_baseHeight[row + static_cast<size_t>(x)] = (fbm(dune_space[0] + 12.0f, dune_space[1] - 7.0f, m_terrainSettings) - 0.5f) * amplitude;
+            m_baseHeight[row + static_cast<size_t>(x)] = baseTerrainHeight(worldX(x), z, m_terrainSettings);
         }
     }
     m_baseDirty = false;

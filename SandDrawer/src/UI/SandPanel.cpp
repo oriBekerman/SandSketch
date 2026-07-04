@@ -28,6 +28,83 @@ void log_int_change(const char* label, int previous, int current)
     }
 }
 
+void log_bool_change(const char* label, bool previous, bool current)
+{
+    if (previous != current) {
+        std::fprintf(stderr, "[SandPanel] %s %d -> %d\n", label, previous ? 1 : 0, current ? 1 : 0);
+    }
+}
+
+const char* terrain_type_name(TerrainType type)
+{
+    switch (type) {
+    case TerrainType::NaturalFBm:
+        return "Natural FBm";
+    case TerrainType::LargeDunes:
+        return "Large Dunes";
+    case TerrainType::Flat:
+        return "Flat";
+    case TerrainType::Rocky:
+        return "Rocky";
+    }
+    return "Unknown";
+}
+
+const char* surface_pattern_name(SurfacePattern pattern)
+{
+    switch (pattern) {
+    case SurfacePattern::None:
+        return "None";
+    case SurfacePattern::WindRipples:
+        return "Wind Ripples";
+    case SurfacePattern::WaterRipples:
+        return "Water Ripples";
+    case SurfacePattern::CrossRipples:
+        return "Cross Ripples";
+    }
+    return "Unknown";
+}
+
+bool terrain_type_button(mu_Context* ctx, TerrainSettings& settings, TerrainType type)
+{
+    char label[32] = {};
+    const bool selected = settings.terrain_type == type;
+    std::snprintf(label, sizeof(label), selected ? "%s *" : "%s", terrain_type_name(type));
+    if (!panel_controls::button(ctx, label)) {
+        return false;
+    }
+    const TerrainType previous = settings.terrain_type;
+    settings.terrain_type = type;
+    if (previous != settings.terrain_type) {
+        std::fprintf(
+            stderr,
+            "[SandPanel] Terrain Type %s -> %s\n",
+            terrain_type_name(previous),
+            terrain_type_name(settings.terrain_type));
+    }
+    return previous != settings.terrain_type;
+}
+
+bool surface_pattern_button(mu_Context* ctx, TerrainSettings& settings, SurfacePattern pattern)
+{
+    char label[32] = {};
+    const bool selected = settings.surface_pattern == pattern;
+    std::snprintf(label, sizeof(label), selected ? "%s *" : "%s", surface_pattern_name(pattern));
+    if (!panel_controls::button(ctx, label)) {
+        return false;
+    }
+    const SurfacePattern previous = settings.surface_pattern;
+    settings.surface_pattern = pattern;
+    if (previous != settings.surface_pattern) {
+        std::fprintf(
+            stderr,
+            "[SandPanel] Surface Pattern %s -> %s\n",
+            surface_pattern_name(previous),
+            surface_pattern_name(settings.surface_pattern));
+    }
+    return previous != settings.surface_pattern;
+}
+
 }// namespace
 
 mu_Rect SandPanel::bounds_for(int viewport_width, int viewport_height)
@@ -90,34 +167,46 @@ void SandPanel::draw(mu_Context* ctx, SandPanelState& state, int viewport_width,
             log_float_change("Brush Strength", previous_brush_strength, state.brush_strength);
         }
 
+        if (mu_begin_treenode_ex(ctx, "Terrain Type", MU_OPT_EXPANDED)) {
+            terrain_type_button(ctx, state.terrain, TerrainType::NaturalFBm);
+            terrain_type_button(ctx, state.terrain, TerrainType::LargeDunes);
+            terrain_type_button(ctx, state.terrain, TerrainType::Flat);
+            terrain_type_button(ctx, state.terrain, TerrainType::Rocky);
+            mu_end_treenode(ctx);
+        }
+
         panel_controls::label(ctx, "Terrain Settings");
-        const float previous_frequency = state.terrain.frequency;
-        if (panel_controls::draw_slider(ctx, "Frequency", &state.terrain.frequency, 0.05f, 1.5f)) {
-            log_float_change("Frequency", previous_frequency, state.terrain.frequency);
-        }
-        const float previous_amplitude = state.terrain.amplitude;
-        if (panel_controls::draw_slider(ctx, "Amplitude", &state.terrain.amplitude, 0.0f, 2.0f)) {
-            log_float_change("Amplitude", previous_amplitude, state.terrain.amplitude);
-        }
-        const float previous_persistence = state.terrain.persistence;
-        if (panel_controls::draw_slider(ctx, "Persistence", &state.terrain.persistence, 0.0f, 1.0f)) {
-            log_float_change("Persistence", previous_persistence, state.terrain.persistence);
-        }
-        const float previous_lacunarity = state.terrain.lacunarity;
-        if (panel_controls::draw_slider(ctx, "Lacunarity", &state.terrain.lacunarity, 1.0f, 4.0f)) {
-            log_float_change("Lacunarity", previous_lacunarity, state.terrain.lacunarity);
-        }
-        const int previous_octaves = state.terrain.octaves;
-        if (panel_controls::draw_int_slider(ctx, "Octaves", &state.terrain.octaves, 1, 8)) {
-            log_int_change("Octaves", previous_octaves, state.terrain.octaves);
-        }
-        const int previous_vignette = state.terrain.vignette;
+        // const float previous_frequency = state.terrain.frequency;
+        // if (panel_controls::draw_slider(ctx, "Frequency", &state.terrain.frequency, 0.05f, 1.5f)) {
+        //     log_float_change("Frequency", previous_frequency, state.terrain.frequency);
+        // }
+        // const float previous_amplitude = state.terrain.amplitude;
+        // if (panel_controls::draw_slider(ctx, "Amplitude", &state.terrain.amplitude, 0.0f, 2.0f)) {
+        //     log_float_change("Amplitude", previous_amplitude, state.terrain.amplitude);
+        // }
+        // const float previous_persistence = state.terrain.persistence;
+        // if (panel_controls::draw_slider(ctx, "Persistence", &state.terrain.persistence, 0.0f, 1.0f)) {
+        //     log_float_change("Persistence", previous_persistence, state.terrain.persistence);
+        // }
+        // const float previous_lacunarity = state.terrain.lacunarity;
+        // if (panel_controls::draw_slider(ctx, "Lacunarity", &state.terrain.lacunarity, 1.0f, 4.0f)) {
+        //     log_float_change("Lacunarity", previous_lacunarity, state.terrain.lacunarity);
+        // }
+        // const int previous_octaves = state.terrain.octaves;
+        // if (panel_controls::draw_int_slider(ctx, "Octaves", &state.terrain.octaves, 1, 8)) {
+        //     log_int_change("Octaves", previous_octaves, state.terrain.octaves);
+        // }
+        const bool previous_vignette = state.terrain.vignette;
         if (panel_controls::checkbox(ctx, "Vignette", &state.terrain.vignette)) {
-            log_int_change("Vignette", previous_vignette, state.terrain.vignette);
+            log_bool_change("Vignette", previous_vignette, state.terrain.vignette);
         }
-        const int previous_pattern = state.terrain.pattern;
-        if (panel_controls::draw_int_slider(ctx, "Pattern", &state.terrain.pattern, 0, 4)) {
-            log_int_change("Pattern", previous_pattern, state.terrain.pattern);
+
+        if (mu_begin_treenode_ex(ctx, "Surface Pattern", MU_OPT_EXPANDED)) {
+            surface_pattern_button(ctx, state.terrain, SurfacePattern::None);
+            surface_pattern_button(ctx, state.terrain, SurfacePattern::WindRipples);
+            surface_pattern_button(ctx, state.terrain, SurfacePattern::WaterRipples);
+            surface_pattern_button(ctx, state.terrain, SurfacePattern::CrossRipples);
+            mu_end_treenode(ctx);
         }
         const float previous_pattern_strength = state.terrain.pattern_strength;
         if (panel_controls::draw_slider(ctx, "Pattern Strength", &state.terrain.pattern_strength, 0.0f, 1.0f)) {
@@ -132,11 +221,11 @@ void SandPanel::draw(mu_Context* ctx, SandPanelState& state, int viewport_width,
             log_float_change("Moisture", previous_moisture, state.terrain.moisture);
         }
 
-        panel_controls::label(ctx, "Simulation");
-        const int previous_paused = state.paused;
-        if (panel_controls::checkbox(ctx, "Pause", &state.paused)) {
-            log_int_change("Pause", previous_paused, state.paused);
-        }
+        // panel_controls::label(ctx, "Simulation");
+        // const int previous_paused = state.paused;
+        // if (panel_controls::checkbox(ctx, "Pause", &state.paused)) {
+        //     log_int_change("Pause", previous_paused, state.paused);
+        // }
 
         mu_end_window(ctx);
     }

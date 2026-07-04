@@ -49,6 +49,14 @@ inline bool checkbox(mu_Context* ctx,const char* text,int* value,int height = 0)
     return mu_checkbox(ctx, text, value) != 0;
 }
 
+inline bool checkbox(mu_Context* ctx,const char* text,bool* value,int height = 0)
+{
+    int checkbox_value = *value ? 1 : 0;
+    const bool changed = checkbox(ctx, text, &checkbox_value, height);
+    *value = checkbox_value != 0;
+    return changed;
+}
+
 inline bool labeled_slider(mu_Context* ctx,const char* label_text,float* value,float min_value,float max_value,int height = 0)
 {
     labeled_control_row(ctx, height);

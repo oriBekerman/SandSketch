@@ -143,25 +143,167 @@ Color operator+(Color a, Color b)
     return {a.r + b.r, a.g + b.g, a.b + b.b};
 }
 
-bool sameSettings(const TerrainSettings& a, const TerrainSettings& b)
+bool sameBaseSettings(const TerrainSettings& a, const TerrainSettings& b)
 {
     constexpr float epsilon = 0.0001f;
     return std::abs(a.frequency - b.frequency) < epsilon &&
         std::abs(a.amplitude - b.amplitude) < epsilon &&
         std::abs(a.persistence - b.persistence) < epsilon &&
         std::abs(a.lacunarity - b.lacunarity) < epsilon &&
-        a.octaves == b.octaves &&
-        a.vignette == b.vignette;
+        a.octaves == b.octaves;
+}
+
+bool samePatternSettings(const TerrainSettings& a, const TerrainSettings& b)
+{
+    constexpr float epsilon = 0.0001f;
+    return a.pattern == b.pattern &&
+        std::abs(a.pattern_strength - b.pattern_strength) < epsilon &&
+        std::abs(a.pattern_scale - b.pattern_scale) < epsilon;
+}
+
+bool sameFinalSettings(const TerrainSettings& a, const TerrainSettings& b)
+{
+    constexpr float epsilon = 0.0001f;
+    return a.vignette == b.vignette &&
+        std::abs(a.moisture - b.moisture) < epsilon;
+}
+
+Rect expanded(Rect rect, int amount)
+{
+    return {
+        rect.x - amount,
+        rect.y - amount,
+        rect.w + amount * 2,
+        rect.h + amount * 2,
+    };
+}
+
+Rect clamped(Rect rect, int width, int height)
+{
+    const int x1 = std::clamp(rect.x, 0, width);
+    const int y1 = std::clamp(rect.y, 0, height);
+    const int x2 = std::clamp(rect.x + rect.w, 0, width);
+    const int y2 = std::clamp(rect.y + rect.h, 0, height);
+    return {x1, y1, std::max(0, x2 - x1), std::max(0, y2 - y1)};
+}
+
+Rect merged(Rect a, Rect b)
+{
+    if (a.w <= 0 || a.h <= 0) {
+        return b;
+    }
+    if (b.w <= 0 || b.h <= 0) {
+        return a;
+    }
+
+    const int x1 = std::min(a.x, b.x);
+    const int y1 = std::min(a.y, b.y);
+    const int x2 = std::max(a.x + a.w, b.x + b.w);
+    const int y2 = std::max(a.y + a.h, b.y + b.h);
+    return {x1, y1, x2 - x1, y2 - y1};
+}
+
+float cheapPatternHeight(float x, float z, const TerrainSettings& settings)
+{
+    const float strength = std::max(0.0f, settings.pattern_strength);
+    const float scale = std::max(0.001f, settings.pattern_scale);
+
+    switch (std::clamp(settings.pattern, 0, 4)) {
+    case 1: {
+        const auto ripple_space = rotate(x, z, 0.72f);
+        const float primary = std::sin(ripple_space[0] * 11.0f * scale + ripple_space[1] * 0.75f);
+        const float cross = std::sin((x * -0.95f + z * 0.31f) * 23.0f * scale);
+        return (primary * 0.035f + cross * 0.011f) * strength;
+    }
+    case 2: {
+        const float distance = std::sqrt(x * x + z * z);
+        const float bowl = -std::exp(-distance * distance * 1.55f * scale) * 0.18f;
+        const float rim = std::exp(-std::pow((distance - 1.25f) * 3.4f * scale, 2.0f)) * 0.11f;
+        return (bowl + rim) * strength;
+    }
+    case 3: {
+        const auto dune_space = rotate(x, z, -0.28f);
+        const float ridge_wave = 0.5f + 0.5f * std::sin(dune_space[0] * 2.1f * scale + dune_space[1] * 0.38f);
+        return (ridge(ridge_wave) - 0.5f) * 0.22f * strength;
+    }
+    case 4: {
+        const auto wave_space = rotate(x, z, 0.18f);
+        return std::sin(wave_space[0] * 4.2f * scale + std::sin(wave_space[1] * 1.6f * scale) * 0.8f) * 0.08f * strength;
+    }
+    default:
+        return 0.0f;
+    }
 }
 }
 
 void SandCanvas::resize(Rect bounds)
 {
+    if (m_bounds.x == bounds.x &&
+        m_bounds.y == bounds.y &&
+        m_bounds.w == bounds.w &&
+        m_bounds.h == bounds.h) {
+        return;
+    }
+
     m_bounds = bounds;
+    m_cacheWidth = 0;
+    m_cacheHeight = 0;
+    m_baseHeight.clear();
+    m_patternHeight.clear();
+    m_brushHeight.clear();
+    m_finalPixels.clear();
+    m_baseDirty = true;
+    m_patternDirty = true;
+    invalidate();
 }
 
 void SandCanvas::clear()
 {
+    std::fill(m_brushHeight.begin(), m_brushHeight.end(), 0.0f);
+    markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
+}
+
+void SandCanvas::invalidate()
+{
+    markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
+}
+
+void SandCanvas::apply_brush(int screen_x, int screen_y, float radius, float strength)
+{
+    ensureCaches();
+    if (m_cacheWidth <= 0 || m_cacheHeight <= 0 || radius <= 0.0f || strength == 0.0f) {
+        return;
+    }
+
+    const int center_x = screen_x - m_bounds.x;
+    const int center_y = screen_y - m_bounds.y;
+    const int brush_radius = static_cast<int>(std::ceil(radius));
+    Rect edit_rect = clamped(
+        {center_x - brush_radius, center_y - brush_radius, brush_radius * 2 + 1, brush_radius * 2 + 1},
+        m_cacheWidth,
+        m_cacheHeight);
+    if (edit_rect.w <= 0 || edit_rect.h <= 0) {
+        return;
+    }
+
+    const float radius_sq = radius * radius;
+    const float height_delta = strength * 0.0009f;
+    for (int y = edit_rect.y; y < edit_rect.y + edit_rect.h; ++y) {
+        const float dy = static_cast<float>(y - center_y);
+        for (int x = edit_rect.x; x < edit_rect.x + edit_rect.w; ++x) {
+            const float dx = static_cast<float>(x - center_x);
+            const float distance_sq = dx * dx + dy * dy;
+            if (distance_sq > radius_sq) {
+                continue;
+            }
+
+            const float t = 1.0f - std::sqrt(distance_sq) / radius;
+            const float falloff = t * t * (3.0f - 2.0f * t);
+            m_brushHeight[static_cast<size_t>(y) * static_cast<size_t>(m_cacheWidth) + static_cast<size_t>(x)] += height_delta * falloff;
+        }
+    }
+
+    markFinalDirty(expanded(edit_rect, 2));
 }
 
 void SandCanvas::set_terrain_settings(TerrainSettings settings)
@@ -172,15 +314,34 @@ void SandCanvas::set_terrain_settings(TerrainSettings settings)
     settings.lacunarity = std::max(0.001f, settings.lacunarity);
     settings.octaves = std::clamp(settings.octaves, 1, 8);
     settings.vignette = settings.vignette != 0 ? 1 : 0;
+    settings.pattern = std::clamp(settings.pattern, 0, 4);
+    settings.pattern_strength = std::max(0.0f, settings.pattern_strength);
+    settings.pattern_scale = std::max(0.001f, settings.pattern_scale);
+    settings.moisture = std::clamp(settings.moisture, 0.0f, 1.0f);
 
-    if (!sameSettings(m_terrainSettings, settings)) {
-        m_terrainSettings = settings;
+    const bool base_changed = !sameBaseSettings(m_terrainSettings, settings);
+    const bool pattern_changed = !samePatternSettings(m_terrainSettings, settings);
+    const bool final_changed = !sameFinalSettings(m_terrainSettings, settings);
+
+    m_terrainSettings = settings;
+    if (base_changed) {
+        m_baseDirty = true;
+        m_patternDirty = true;
+        markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
+    } else if (pattern_changed) {
+        m_patternDirty = true;
+        markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
+    } else if (final_changed) {
+        markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
     }
 }
 
 void SandCanvas::draw(Renderer& renderer) const
 {
-    drawTerrain(renderer);
+    ensureCaches();
+    rebuildDirtyFinalPixels();
+
+    blitTerrain(renderer);
     renderer.draw_rect(m_bounds, kCanvasBorderColor);
 }
 
@@ -189,86 +350,211 @@ Rect SandCanvas::bounds() const
     return m_bounds;
 }
 
-void SandCanvas::drawTerrain(Renderer& renderer) const
+void SandCanvas::blitTerrain(Renderer& renderer) const
 {
     const int start_x = std::clamp(m_bounds.x, 0, renderer.width());
     const int start_y = std::clamp(m_bounds.y, 0, renderer.height());
     const int end_x = std::clamp(m_bounds.x + m_bounds.w, 0, renderer.width());
     const int end_y = std::clamp(m_bounds.y + m_bounds.h, 0, renderer.height());
-    if (start_x >= end_x || start_y >= end_y) {
+    if (start_x >= end_x || start_y >= end_y || m_cacheWidth <= 0 || m_cacheHeight <= 0) {
         return;
     }
 
-    constexpr std::array<float, 3> light_dir = {0.32f, 0.84f, 0.43f};
-    constexpr std::array<float, 3> view_dir = {0.0f, 1.0f, 0.22f};
-    constexpr Color shadow = {102.0f, 74.0f, 39.0f};
-    constexpr Color low_sand = {157.0f, 111.0f, 54.0f};
-    constexpr Color mid_sand = {199.0f, 154.0f, 82.0f};
-    constexpr Color warm_sand = {225.0f, 183.0f, 109.0f};
-    constexpr Color highlight_sand = {255.0f, 228.0f, 163.0f};
-
-    const float inv_width = 1.0f / static_cast<float>(std::max(1, m_bounds.w - 1));
-    const float inv_height = 1.0f / static_cast<float>(std::max(1, m_bounds.h - 1));
-    const float sample_step = kSandExtent / static_cast<float>(std::max(m_bounds.w, m_bounds.h));
-    const float amplitude = std::max(0.001f, m_terrainSettings.amplitude);
+    const int copy_width = std::min(end_x - start_x, m_cacheWidth - (start_x - m_bounds.x));
+    if (copy_width <= 0) {
+        return;
+    }
 
     uint32_t* pixels = renderer.pixels();
     for (int y = start_y; y < end_y; ++y) {
-        const float v = static_cast<float>(y - m_bounds.y) * inv_height;
-        const float world_z = (v - 0.5f) * kSandExtent;
-        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(renderer.width());
+        const int cache_y = y - m_bounds.y;
+        if (cache_y < 0 || cache_y >= m_cacheHeight) {
+            continue;
+        }
 
-        for (int x = start_x; x < end_x; ++x) {
-            const float u = static_cast<float>(x - m_bounds.x) * inv_width;
-            const float world_x = (u - 0.5f) * kSandExtent;
-            const float center = sandHeight(world_x, world_z, m_terrainSettings);
-            const float left = sandHeight(world_x - sample_step, world_z, m_terrainSettings);
-            const float right = sandHeight(world_x + sample_step, world_z, m_terrainSettings);
-            const float down = sandHeight(world_x, world_z - sample_step, m_terrainSettings);
-            const float up = sandHeight(world_x, world_z + sample_step, m_terrainSettings);
+        const int cache_x = start_x - m_bounds.x;
+        std::copy_n(
+            m_finalPixels.data() + static_cast<size_t>(cache_y) * static_cast<size_t>(m_cacheWidth) + static_cast<size_t>(cache_x),
+            copy_width,
+            pixels + static_cast<size_t>(y) * static_cast<size_t>(renderer.width()) + static_cast<size_t>(start_x));
+    }
+}
 
-            std::array<float, 3> normal = {left - right, sample_step * 2.0f, down - up};
-            normalize(normal);
+void SandCanvas::ensureCaches() const
+{
+    m_cacheWidth = std::max(0, m_bounds.w);
+    m_cacheHeight = std::max(0, m_bounds.h);
+    const size_t cache_size = static_cast<size_t>(m_cacheWidth) * static_cast<size_t>(m_cacheHeight);
+    if (m_baseHeight.size() != cache_size) {
+        m_baseHeight.assign(cache_size, 0.0f);
+        m_patternHeight.assign(cache_size, 0.0f);
+        m_brushHeight.assign(cache_size, 0.0f);
+        m_finalPixels.assign(cache_size, 0);
+        m_baseDirty = true;
+        m_patternDirty = true;
+        markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
+    }
 
-            const float diffuse = std::max(0.0f, dot(normal, light_dir));
-            const float back_shadow = std::clamp((right - left + up - down) * 9.0f, -0.18f, 0.18f);
+    if (m_baseDirty) {
+        rebuildBaseHeight();
+    }
+    if (m_patternDirty) {
+        rebuildPatternHeight();
+    }
+}
 
-            std::array<float, 3> half_dir = {
-                light_dir[0] + view_dir[0],
-                light_dir[1] + view_dir[1],
-                light_dir[2] + view_dir[2],
-            };
-            normalize(half_dir);
-            const float specular = std::pow(std::max(0.0f, dot(normal, half_dir)), 24.0f) * 0.18f;
+void SandCanvas::rebuildBaseHeight() const
+{
+    if (m_cacheWidth <= 0 || m_cacheHeight <= 0) {
+        m_baseDirty = false;
+        return;
+    }
 
-            const float height_t = std::clamp(0.5f + center / (amplitude * 1.7f), 0.0f, 1.0f);
-            const float palette_noise = valueNoise(world_x * 2.7f + 10.0f, world_z * 2.7f - 4.0f);
-            Color sand = mix(low_sand, mid_sand, height_t);
-            sand = mix(sand, warm_sand, std::clamp(diffuse * 0.55f + palette_noise * 0.18f, 0.0f, 1.0f));
-            sand = mix(shadow, sand, std::clamp(0.42f + diffuse * 0.76f - back_shadow, 0.0f, 1.0f));
-
-            const auto ripple_space = rotate(world_x, world_z, 0.72f);
-            const float ripple_line = 0.5f + 0.5f * std::sin(ripple_space[0] * 42.0f + ripple_space[1] * 2.0f);
-            const float ripple_highlight = std::pow(ripple_line, 9.0f) * 0.13f * diffuse;
-            const float ambient = 0.34f;
-            float shade = ambient + diffuse * 0.82f + specular + ripple_highlight;
-
-            const float nx = u * 2.0f - 1.0f;
-            const float ny = v * 2.0f - 1.0f;
-            if (m_terrainSettings.vignette != 0) {
-                const float vignette = std::clamp(1.0f - (nx * nx + ny * ny) * 0.26f, 0.72f, 1.0f);
-                shade *= vignette;
-            }
-
-            const float fine_grain = (valueNoise(world_x * 48.0f, world_z * 48.0f) - 0.5f) * 13.0f;
-            const float coarse_grain = (valueNoise(world_x * 18.0f + 5.0f, world_z * 18.0f - 7.0f) - 0.5f) * 7.0f;
-            const Color lit = sand * shade + highlight_sand * specular;
-            const float grain = fine_grain + coarse_grain + ripple_highlight * 18.0f;
-
-            pixels[row + static_cast<size_t>(x)] = MFB_RGB(
-                toByte(lit.r + grain),
-                toByte(lit.g + grain * 0.82f),
-                toByte(lit.b + grain * 0.55f));
+    const float amplitude = std::max(0.001f, m_terrainSettings.amplitude);
+    for (int y = 0; y < m_cacheHeight; ++y) {
+        const float z = worldZ(y);
+        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(m_cacheWidth);
+        for (int x = 0; x < m_cacheWidth; ++x) {
+            const auto dune_space = rotate(worldX(x), z, -0.28f);
+            m_baseHeight[row + static_cast<size_t>(x)] = (fbm(dune_space[0] + 12.0f, dune_space[1] - 7.0f, m_terrainSettings) - 0.5f) * amplitude;
         }
     }
+    m_baseDirty = false;
+    markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
+}
+
+void SandCanvas::rebuildPatternHeight() const
+{
+    if (m_cacheWidth <= 0 || m_cacheHeight <= 0) {
+        m_patternDirty = false;
+        return;
+    }
+
+    for (int y = 0; y < m_cacheHeight; ++y) {
+        const float z = worldZ(y);
+        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(m_cacheWidth);
+        for (int x = 0; x < m_cacheWidth; ++x) {
+            m_patternHeight[row + static_cast<size_t>(x)] = cheapPatternHeight(worldX(x), z, m_terrainSettings);
+        }
+    }
+    m_patternDirty = false;
+    markFinalDirty({0, 0, m_cacheWidth, m_cacheHeight});
+}
+
+void SandCanvas::rebuildDirtyFinalPixels() const
+{
+    if (!m_finalDirty) {
+        return;
+    }
+
+    const Rect rect = clamped(m_finalDirtyRect, m_cacheWidth, m_cacheHeight);
+    for (int y = rect.y; y < rect.y + rect.h; ++y) {
+        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(m_cacheWidth);
+        for (int x = rect.x; x < rect.x + rect.w; ++x) {
+            m_finalPixels[row + static_cast<size_t>(x)] = shadePixel(x, y);
+        }
+    }
+    m_finalDirty = false;
+    m_finalDirtyRect = {};
+}
+
+void SandCanvas::markFinalDirty(Rect rect) const
+{
+    const Rect dirty_rect = clamped(rect, m_cacheWidth, m_cacheHeight);
+    if (dirty_rect.w <= 0 || dirty_rect.h <= 0) {
+        return;
+    }
+
+    m_finalDirtyRect = m_finalDirty ? merged(m_finalDirtyRect, dirty_rect) : dirty_rect;
+    m_finalDirty = true;
+}
+
+uint32_t SandCanvas::shadePixel(int x, int y) const
+{
+    constexpr std::array<float, 3> light_dir = {0.32f, 0.84f, 0.43f};
+    constexpr std::array<float, 3> view_dir = {0.0f, 1.0f, 0.22f};
+    constexpr Color shadow = {102.0f, 74.0f, 39.0f};
+    constexpr Color wet_shadow = {62.0f, 54.0f, 45.0f};
+    constexpr Color low_sand = {157.0f, 111.0f, 54.0f};
+    constexpr Color mid_sand = {199.0f, 154.0f, 82.0f};
+    constexpr Color warm_sand = {225.0f, 183.0f, 109.0f};
+    constexpr Color wet_sand = {121.0f, 103.0f, 78.0f};
+    constexpr Color highlight_sand = {255.0f, 228.0f, 163.0f};
+
+    const float sample_step = kSandExtent / static_cast<float>(std::max(m_cacheWidth, m_cacheHeight));
+    const float center = combinedHeight(x, y);
+    const float left = combinedHeight(x - 1, y);
+    const float right = combinedHeight(x + 1, y);
+    const float down = combinedHeight(x, y - 1);
+    const float up = combinedHeight(x, y + 1);
+
+    std::array<float, 3> normal = {left - right, sample_step * 2.0f, down - up};
+    normalize(normal);
+
+    const float diffuse = std::max(0.0f, dot(normal, light_dir));
+    const float back_shadow = std::clamp((right - left + up - down) * 9.0f, -0.18f, 0.18f);
+
+    std::array<float, 3> half_dir = {
+        light_dir[0] + view_dir[0],
+        light_dir[1] + view_dir[1],
+        light_dir[2] + view_dir[2],
+    };
+    normalize(half_dir);
+    const float specular = std::pow(std::max(0.0f, dot(normal, half_dir)), 24.0f) * (0.18f + m_terrainSettings.moisture * 0.18f);
+
+    const float u = static_cast<float>(x) / static_cast<float>(std::max(1, m_cacheWidth - 1));
+    const float v = static_cast<float>(y) / static_cast<float>(std::max(1, m_cacheHeight - 1));
+    const float wx = worldX(x);
+    const float wz = worldZ(y);
+    const float amplitude = std::max(0.001f, m_terrainSettings.amplitude);
+    const float height_t = std::clamp(0.5f + center / (amplitude * 1.7f), 0.0f, 1.0f);
+    const float palette_noise = valueNoise(wx * 2.7f + 10.0f, wz * 2.7f - 4.0f);
+    const float moisture = std::clamp(m_terrainSettings.moisture, 0.0f, 1.0f);
+
+    Color sand = mix(low_sand, mid_sand, height_t);
+    sand = mix(sand, warm_sand, std::clamp(diffuse * 0.55f + palette_noise * 0.18f, 0.0f, 1.0f));
+    sand = mix(sand, wet_sand, moisture * 0.62f);
+    sand = mix(mix(shadow, wet_shadow, moisture), sand, std::clamp(0.42f + diffuse * 0.76f - back_shadow, 0.0f, 1.0f));
+
+    const float ripple_line = 0.5f + 0.5f * std::sin((wx * 0.75f + wz * 0.25f) * 42.0f);
+    const float ripple_highlight = std::pow(ripple_line, 9.0f) * 0.08f * diffuse;
+    const float ambient = 0.34f - moisture * 0.05f;
+    float shade = ambient + diffuse * (0.82f - moisture * 0.12f) + specular + ripple_highlight;
+
+    const float nx = u * 2.0f - 1.0f;
+    const float ny = v * 2.0f - 1.0f;
+    if (m_terrainSettings.vignette != 0) {
+        const float vignette = std::clamp(1.0f - (nx * nx + ny * ny) * 0.26f, 0.72f, 1.0f);
+        shade *= vignette;
+    }
+
+    const float fine_grain = (valueNoise(wx * 48.0f, wz * 48.0f) - 0.5f) * 13.0f * (1.0f - moisture * 0.45f);
+    const float coarse_grain = (valueNoise(wx * 18.0f + 5.0f, wz * 18.0f - 7.0f) - 0.5f) * 7.0f * (1.0f - moisture * 0.35f);
+    const Color lit = sand * shade + highlight_sand * specular;
+    const float grain = fine_grain + coarse_grain + ripple_highlight * 18.0f;
+
+    return MFB_RGB(
+        toByte(lit.r + grain),
+        toByte(lit.g + grain * 0.82f),
+        toByte(lit.b + grain * 0.55f));
+}
+
+float SandCanvas::combinedHeight(int x, int y) const
+{
+    const int sample_x = std::clamp(x, 0, std::max(0, m_cacheWidth - 1));
+    const int sample_y = std::clamp(y, 0, std::max(0, m_cacheHeight - 1));
+    const size_t index = static_cast<size_t>(sample_y) * static_cast<size_t>(m_cacheWidth) + static_cast<size_t>(sample_x);
+    return m_baseHeight[index] + m_patternHeight[index] + m_brushHeight[index];
+}
+
+float SandCanvas::worldX(int x) const
+{
+    const float u = static_cast<float>(x) / static_cast<float>(std::max(1, m_cacheWidth - 1));
+    return (u - 0.5f) * kSandExtent;
+}
+
+float SandCanvas::worldZ(int y) const
+{
+    const float v = static_cast<float>(y) / static_cast<float>(std::max(1, m_cacheHeight - 1));
+    return (v - 0.5f) * kSandExtent;
 }

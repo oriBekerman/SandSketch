@@ -17,5 +17,6 @@ struct SandPanelState {
 
 class SandPanel {
 public:
-    void draw(mu_Context* ctx, SandPanelState& state);
+    static mu_Rect bounds_for(int viewport_width, int viewport_height);
+    void draw(mu_Context* ctx, SandPanelState& state, int viewport_width, int viewport_height);
 };

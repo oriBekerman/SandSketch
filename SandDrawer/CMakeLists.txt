@@ -32,7 +32,7 @@ add_executable(SandDrawer
     src/main.cpp
     src/Renderer.cpp
     src/Renderer.h
-    src/ui_bridge.cpp
+    # src/ui_bridge.cpp
     src/ui_bridge.h
     src/SandCanvas.cpp
     src/SandCanvas.h

@@ -26,6 +26,7 @@ private:
     void markFinalDirty(Rect rect) const;
     uint32_t shadePixel(int x, int y) const;
     float combinedHeight(int x, int y) const;
+    float patternHeight(int x, int y) const;
     float worldX(int x) const;
     float worldZ(int y) const;
 

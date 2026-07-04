@@ -203,32 +203,57 @@ Rect merged(Rect a, Rect b)
     return {x1, y1, x2 - x1, y2 - y1};
 }
 
+float centeredNoise(float x, float z)
+{
+    return valueNoise(x, z) - 0.5f;
+}
+
+float softPattern(float value, float strength, float limit)
+{
+    const float limited = std::tanh(value / std::max(0.0001f, limit)) * limit;
+    return std::clamp(limited * strength, -limit, limit);
+}
+
+std::array<float, 2> warped(float x, float z, float amount)
+{
+    return {
+        x + centeredNoise(x * 0.72f + 13.1f, z * 0.72f - 9.4f) * amount,
+        z + centeredNoise(x * 0.68f - 4.7f, z * 0.68f + 21.3f) * amount,
+    };
+}
+
 float cheapPatternHeight(float x, float z, const TerrainSettings& settings)
 {
     const float strength = std::max(0.0f, settings.pattern_strength);
     const float scale = std::max(0.001f, settings.pattern_scale);
+    const auto warped_space = warped(x, z, 0.42f);
 
     switch (std::clamp(settings.pattern, 0, 4)) {
     case 1: {
-        const auto ripple_space = rotate(x, z, 0.72f);
-        const float primary = std::sin(ripple_space[0] * 11.0f * scale + ripple_space[1] * 0.75f);
-        const float cross = std::sin((x * -0.95f + z * 0.31f) * 23.0f * scale);
-        return (primary * 0.035f + cross * 0.011f) * strength;
+        const auto ripple_space = rotate(warped_space[0], warped_space[1], 0.72f);
+        const float phase_warp = centeredNoise(x * 1.15f + 33.0f, z * 1.15f - 17.0f) * 2.4f;
+        const float envelope = 0.65f + valueNoise(x * 0.48f - 8.0f, z * 0.48f + 6.0f) * 0.35f;
+        const float phase = ripple_space[0] * 8.2f * scale + ripple_space[1] * 1.18f + phase_warp;
+        const float primary = std::sin(phase) * 0.020f;
+        const float secondary = std::sin(phase * 1.73f + phase_warp * 0.35f) * 0.005f;
+        return softPattern((primary + secondary) * envelope, strength, 0.024f);
     }
     case 2: {
-        const float distance = std::sqrt(x * x + z * z);
+        const float distance = std::sqrt(warped_space[0] * warped_space[0] + warped_space[1] * warped_space[1]);
         const float bowl = -std::exp(-distance * distance * 1.55f * scale) * 0.18f;
         const float rim = std::exp(-std::pow((distance - 1.25f) * 3.4f * scale, 2.0f)) * 0.11f;
-        return (bowl + rim) * strength;
+        return softPattern(bowl + rim, strength, 0.16f);
     }
     case 3: {
-        const auto dune_space = rotate(x, z, -0.28f);
-        const float ridge_wave = 0.5f + 0.5f * std::sin(dune_space[0] * 2.1f * scale + dune_space[1] * 0.38f);
-        return (ridge(ridge_wave) - 0.5f) * 0.22f * strength;
+        const auto dune_space = rotate(warped_space[0], warped_space[1], -0.28f);
+        const float phase = dune_space[0] * 1.65f * scale + dune_space[1] * 0.46f + centeredNoise(x * 0.55f, z * 0.55f) * 1.2f;
+        const float ridge_wave = 0.5f + 0.5f * std::sin(phase);
+        return softPattern((ridge(ridge_wave) - 0.5f) * 0.16f, strength, 0.075f);
     }
     case 4: {
-        const auto wave_space = rotate(x, z, 0.18f);
-        return std::sin(wave_space[0] * 4.2f * scale + std::sin(wave_space[1] * 1.6f * scale) * 0.8f) * 0.08f * strength;
+        const auto wave_space = rotate(warped_space[0], warped_space[1], 0.18f);
+        const float phase = wave_space[0] * 3.25f * scale + std::sin(wave_space[1] * 1.35f * scale) * 0.65f;
+        return softPattern(std::sin(phase) * 0.055f, strength, 0.045f);
     }
     default:
         return 0.0f;
@@ -504,11 +529,9 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
 
     const float u = static_cast<float>(x) / static_cast<float>(std::max(1, m_cacheWidth - 1));
     const float v = static_cast<float>(y) / static_cast<float>(std::max(1, m_cacheHeight - 1));
-    const float wx = worldX(x);
-    const float wz = worldZ(y);
     const float amplitude = std::max(0.001f, m_terrainSettings.amplitude);
     const float height_t = std::clamp(0.5f + center / (amplitude * 1.7f), 0.0f, 1.0f);
-    const float palette_noise = valueNoise(wx * 2.7f + 10.0f, wz * 2.7f - 4.0f);
+    const float palette_noise = valueNoise(worldX(x) * 2.7f + 10.0f, worldZ(y) * 2.7f - 4.0f);
     const float moisture = std::clamp(m_terrainSettings.moisture, 0.0f, 1.0f);
 
     Color sand = mix(low_sand, mid_sand, height_t);
@@ -516,10 +539,13 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
     sand = mix(sand, wet_sand, moisture * 0.62f);
     sand = mix(mix(shadow, wet_shadow, moisture), sand, std::clamp(0.42f + diffuse * 0.76f - back_shadow, 0.0f, 1.0f));
 
-    const float ripple_line = 0.5f + 0.5f * std::sin((wx * 0.75f + wz * 0.25f) * 42.0f);
-    const float ripple_highlight = std::pow(ripple_line, 9.0f) * 0.08f * diffuse;
+    const float pattern_center = patternHeight(x, y);
+    const float pattern_slope = std::abs(patternHeight(x + 1, y) - patternHeight(x - 1, y)) +
+        std::abs(patternHeight(x, y + 1) - patternHeight(x, y - 1));
+    const float pattern_crest = std::clamp(pattern_center * 38.0f + pattern_slope * 14.0f, 0.0f, 1.0f);
+    const float pattern_highlight = pattern_crest * pattern_crest * 0.055f * diffuse;
     const float ambient = 0.34f - moisture * 0.05f;
-    float shade = ambient + diffuse * (0.82f - moisture * 0.12f) + specular + ripple_highlight;
+    float shade = ambient + diffuse * (0.82f - moisture * 0.12f) + specular + pattern_highlight;
 
     const float nx = u * 2.0f - 1.0f;
     const float ny = v * 2.0f - 1.0f;
@@ -528,10 +554,12 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
         shade *= vignette;
     }
 
+    const float wx = worldX(x);
+    const float wz = worldZ(y);
     const float fine_grain = (valueNoise(wx * 48.0f, wz * 48.0f) - 0.5f) * 13.0f * (1.0f - moisture * 0.45f);
     const float coarse_grain = (valueNoise(wx * 18.0f + 5.0f, wz * 18.0f - 7.0f) - 0.5f) * 7.0f * (1.0f - moisture * 0.35f);
     const Color lit = sand * shade + highlight_sand * specular;
-    const float grain = fine_grain + coarse_grain + ripple_highlight * 18.0f;
+    const float grain = fine_grain + coarse_grain + pattern_highlight * 16.0f;
 
     return MFB_RGB(
         toByte(lit.r + grain),
@@ -545,6 +573,13 @@ float SandCanvas::combinedHeight(int x, int y) const
     const int sample_y = std::clamp(y, 0, std::max(0, m_cacheHeight - 1));
     const size_t index = static_cast<size_t>(sample_y) * static_cast<size_t>(m_cacheWidth) + static_cast<size_t>(sample_x);
     return m_baseHeight[index] + m_patternHeight[index] + m_brushHeight[index];
+}
+
+float SandCanvas::patternHeight(int x, int y) const
+{
+    const int sample_x = std::clamp(x, 0, std::max(0, m_cacheWidth - 1));
+    const int sample_y = std::clamp(y, 0, std::max(0, m_cacheHeight - 1));
+    return m_patternHeight[static_cast<size_t>(sample_y) * static_cast<size_t>(m_cacheWidth) + static_cast<size_t>(sample_x)];
 }
 
 float SandCanvas::worldX(int x) const

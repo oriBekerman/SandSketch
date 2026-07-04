@@ -8,7 +8,7 @@ struct TerrainSettings {
     int octaves = 5;
     int vignette = 1;
     int pattern = 1;
-    float pattern_strength = 0.65f;
-    float pattern_scale = 1.0f;
+    float pattern_strength = 0.28f;
+    float pattern_scale = 0.75f;
     float moisture = 0.0f;
 };

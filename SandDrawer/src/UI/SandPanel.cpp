@@ -120,11 +120,11 @@ void SandPanel::draw(mu_Context* ctx, SandPanelState& state, int viewport_width,
             log_int_change("Pattern", previous_pattern, state.terrain.pattern);
         }
         const float previous_pattern_strength = state.terrain.pattern_strength;
-        if (panel_controls::draw_slider(ctx, "Pattern Strength", &state.terrain.pattern_strength, 0.0f, 1.5f)) {
+        if (panel_controls::draw_slider(ctx, "Pattern Strength", &state.terrain.pattern_strength, 0.0f, 1.0f)) {
             log_float_change("Pattern Strength", previous_pattern_strength, state.terrain.pattern_strength);
         }
         const float previous_pattern_scale = state.terrain.pattern_scale;
-        if (panel_controls::draw_slider(ctx, "Pattern Scale", &state.terrain.pattern_scale, 0.25f, 3.0f)) {
+        if (panel_controls::draw_slider(ctx, "Pattern Scale", &state.terrain.pattern_scale, 0.35f, 2.2f)) {
             log_float_change("Pattern Scale", previous_pattern_scale, state.terrain.pattern_scale);
         }
         const float previous_moisture = state.terrain.moisture;

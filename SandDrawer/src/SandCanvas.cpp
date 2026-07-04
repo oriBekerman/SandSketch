@@ -4,262 +4,256 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <glm/glm.hpp>
+#include <glm/common.hpp>
 
 namespace {
-constexpr uint32_t kCanvasBorderColor = MFB_RGB(170, 145, 96);
-constexpr float kSandExtent = 8.0f;
+    constexpr uint32_t kCanvasBorderColor = MFB_RGB(170, 145, 96);
+    constexpr float kSandExtent = 8.0f;
 
-struct Color {
-    float r = 0.0f;
-    float g = 0.0f;
-    float b = 0.0f;
-};
-
-float fract(float value)
-{
-    return value - std::floor(value);
-}
-
-float hash(float x, float z)
-{
-    return fract(std::sin(x * 127.1f + z * 311.7f) * 43758.5453f);
-}
-
-float smoothstep(float value)
-{
-    return value * value * (3.0f - 2.0f * value);
-}
-
-float valueNoise(float x, float z)
-{
-    const float ix = std::floor(x);
-    const float iz = std::floor(z);
-    const float fx = smoothstep(fract(x));
-    const float fz = smoothstep(fract(z));
-
-    const float a = hash(ix, iz);
-    const float b = hash(ix + 1.0f, iz);
-    const float c = hash(ix, iz + 1.0f);
-    const float d = hash(ix + 1.0f, iz + 1.0f);
-    const float x1 = a + (b - a) * fx;
-    const float x2 = c + (d - c) * fx;
-    return x1 + (x2 - x1) * fz;
-}
-
-float fbm(float x, float z, const TerrainSettings& settings)
-{
-    float total = 0.0f;
-    float amplitude = 1.0f;
-    float frequency = std::max(0.001f, settings.frequency);
-    float normalization = 0.0f;
-    const int octave_count = std::clamp(settings.octaves, 1, 8);
-
-    for (int octave = 0; octave < octave_count; ++octave) {
-        total += valueNoise(x * frequency, z * frequency) * amplitude;
-        normalization += amplitude;
-        frequency *= std::max(0.001f, settings.lacunarity);
-        amplitude *= std::clamp(settings.persistence, 0.0f, 1.0f);
-    }
-
-    return normalization > 0.0f ? total / normalization : 0.0f;
-}
-
-float fbm(float x, float z, float frequency, float persistence, float lacunarity, int octaves)
-{
-    TerrainSettings settings = {};
-    settings.frequency = frequency;
-    settings.persistence = persistence;
-    settings.lacunarity = lacunarity;
-    settings.octaves = octaves;
-    return fbm(x, z, settings);
-}
-
-float ridge(float value)
-{
-    return 1.0f - std::abs(value * 2.0f - 1.0f);
-}
-
-std::array<float, 2> rotate(float x, float z, float radians)
-{
-    const float c = std::cos(radians);
-    const float s = std::sin(radians);
-    return {x * c - z * s, x * s + z * c};
-}
-
-float sandHeight(float x, float z, const TerrainSettings& settings)
-{
-    const float amplitude = std::max(0.001f, settings.amplitude);
-    const auto dune_space = rotate(x, z, -0.28f);
-    const auto ripple_space = rotate(x, z, 0.72f);
-    const auto cross_ripple_space = rotate(x, z, -0.95f);
-
-    const float broad_dunes = (fbm(dune_space[0] + 12.0f, dune_space[1] - 7.0f, settings) - 0.5f) * amplitude;
-    const float dune_ridges = ridge(fbm(dune_space[0] * 0.72f - 5.0f, dune_space[1] * 0.28f + 9.0f, settings.frequency * 1.4f, 0.46f, 2.15f, 4));
-    const float ripple_mod = 0.55f + fbm(ripple_space[0] + 31.0f, ripple_space[1] - 19.0f, settings.frequency * 3.0f, 0.5f, 2.0f, 3) * 0.75f;
-    const float directional_ripples = std::sin(ripple_space[0] * 11.0f + ripple_space[1] * 0.75f + dune_ridges * 1.8f) * 0.035f * ripple_mod;
-    const float fine_cross_ripples = std::sin(cross_ripple_space[0] * 23.0f + cross_ripple_space[1] * 1.4f) * 0.011f;
-    const float granular_noise = (fbm(x + 4.0f, z - 2.0f, 8.5f, 0.38f, 2.3f, 3) - 0.5f) * 0.025f;
-
-    return broad_dunes + (dune_ridges - 0.5f) * amplitude * 0.28f + directional_ripples + fine_cross_ripples + granular_noise;
-}
-
-void normalize(std::array<float, 3>& value)
-{
-    const float length = std::sqrt(value[0] * value[0] + value[1] * value[1] + value[2] * value[2]);
-    if (length > 0.0f) {
-        value[0] /= length;
-        value[1] /= length;
-        value[2] /= length;
-    }
-}
-
-float dot(const std::array<float, 3>& a, const std::array<float, 3>& b)
-{
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-uint8_t toByte(float value)
-{
-    return static_cast<uint8_t>(std::clamp(value, 0.0f, 255.0f));
-}
-
-Color mix(Color a, Color b, float t)
-{
-    t = std::clamp(t, 0.0f, 1.0f);
-    return {
-        a.r + (b.r - a.r) * t,
-        a.g + (b.g - a.g) * t,
-        a.b + (b.b - a.b) * t,
+    //====== Color Utilities ======
+    struct Color {
+        float r = 0.0f;
+        float g = 0.0f;
+        float b = 0.0f;
     };
-}
 
-Color operator*(Color color, float value)
-{
-    return {color.r * value, color.g * value, color.b * value};
-}
-
-Color operator+(Color a, Color b)
-{
-    return {a.r + b.r, a.g + b.g, a.b + b.b};
-}
-
-bool sameBaseSettings(const TerrainSettings& a, const TerrainSettings& b)
-{
-    constexpr float epsilon = 0.0001f;
-    return std::abs(a.frequency - b.frequency) < epsilon &&
-        std::abs(a.amplitude - b.amplitude) < epsilon &&
-        std::abs(a.persistence - b.persistence) < epsilon &&
-        std::abs(a.lacunarity - b.lacunarity) < epsilon &&
-        a.octaves == b.octaves;
-}
-
-bool samePatternSettings(const TerrainSettings& a, const TerrainSettings& b)
-{
-    constexpr float epsilon = 0.0001f;
-    return a.pattern == b.pattern &&
-        std::abs(a.pattern_strength - b.pattern_strength) < epsilon &&
-        std::abs(a.pattern_scale - b.pattern_scale) < epsilon;
-}
-
-bool sameFinalSettings(const TerrainSettings& a, const TerrainSettings& b)
-{
-    constexpr float epsilon = 0.0001f;
-    return a.vignette == b.vignette &&
-        std::abs(a.moisture - b.moisture) < epsilon;
-}
-
-Rect expanded(Rect rect, int amount)
-{
-    return {
-        rect.x - amount,
-        rect.y - amount,
-        rect.w + amount * 2,
-        rect.h + amount * 2,
-    };
-}
-
-Rect clamped(Rect rect, int width, int height)
-{
-    const int x1 = std::clamp(rect.x, 0, width);
-    const int y1 = std::clamp(rect.y, 0, height);
-    const int x2 = std::clamp(rect.x + rect.w, 0, width);
-    const int y2 = std::clamp(rect.y + rect.h, 0, height);
-    return {x1, y1, std::max(0, x2 - x1), std::max(0, y2 - y1)};
-}
-
-Rect merged(Rect a, Rect b)
-{
-    if (a.w <= 0 || a.h <= 0) {
-        return b;
-    }
-    if (b.w <= 0 || b.h <= 0) {
-        return a;
+    uint8_t toByte(float value)
+    {
+        return static_cast<uint8_t>(std::clamp(value, 0.0f, 255.0f));
     }
 
-    const int x1 = std::min(a.x, b.x);
-    const int y1 = std::min(a.y, b.y);
-    const int x2 = std::max(a.x + a.w, b.x + b.w);
-    const int y2 = std::max(a.y + a.h, b.y + b.h);
-    return {x1, y1, x2 - x1, y2 - y1};
+    Color mix(Color a, Color b, float t)
+    {
+        t = std::clamp(t, 0.0f, 1.0f);
+        return {
+            a.r + (b.r - a.r) * t,
+            a.g + (b.g - a.g) * t,
+            a.b + (b.b - a.b) * t,
+        };
+    }
+
+    Color operator*(Color color, float value)
+    {
+        return {color.r * value, color.g * value, color.b * value};
+    }
+
+    Color operator+(Color a, Color b)
+    {
+        return {a.r + b.r, a.g + b.g, a.b + b.b};
+    }
+
+    //====== Noise Generation Functions ======
+    float fract(float value)
+    {
+        return value - std::floor(value);
+    }
+
+    float hash(float x, float z)
+    {
+        return fract(std::sin(x * 127.1f + z * 311.7f) * 43758.5453f);
+    }
+
+    float smoothstep(float value)
+    {
+        return value * value * (3.0f - 2.0f * value);
+    }
+
+    float valueNoise(float x, float z)
+    {
+        const float ix = std::floor(x);
+        const float iz = std::floor(z);
+        const float fx = smoothstep(fract(x));
+        const float fz = smoothstep(fract(z));
+
+        const float a = hash(ix, iz);
+        const float b = hash(ix + 1.0f, iz);
+        const float c = hash(ix, iz + 1.0f);
+        const float d = hash(ix + 1.0f, iz + 1.0f);
+        const float x1 = a + (b - a) * fx;
+        const float x2 = c + (d - c) * fx;
+        return x1 + (x2 - x1) * fz;
+    }
+
+    float fbm(float x, float z, const TerrainSettings& settings)
+    {
+        float total = 0.0f;
+        float amplitude = 1.0f;
+        float frequency = std::max(0.001f, settings.frequency);
+        float normalization = 0.0f;
+        const int octave_count = std::clamp(settings.octaves, 1, 8);
+
+        for (int octave = 0; octave < octave_count; ++octave) {
+            total += valueNoise(x * frequency, z * frequency) * amplitude;
+            normalization += amplitude;
+            frequency *= std::max(0.001f, settings.lacunarity);
+            amplitude *= std::clamp(settings.persistence, 0.0f, 1.0f);
+        }
+
+        return normalization > 0.0f ? total / normalization : 0.0f;
+    }
+
+    float fbm(float x, float z, float frequency, float persistence, float lacunarity, int octaves)
+    {
+        TerrainSettings settings = {};
+        settings.frequency = frequency;
+        settings.persistence = persistence;
+        settings.lacunarity = lacunarity;
+        settings.octaves = octaves;
+        return fbm(x, z, settings);
+    }
+
+    float ridge(float value)
+    {
+        return 1.0f - std::abs(value * 2.0f - 1.0f);
+    }
+
+    //====== Coordinate / Pattern helpers ======
+
+    glm::vec2 rotate(float x, float z, float radians)
+    {
+        const float c = std::cos(radians);
+        const float s = std::sin(radians);
+        return {x * c - z * s, x * s + z * c};
+    }
+
+    float centeredNoise(float x, float z)
+    {
+        return valueNoise(x, z) - 0.5f;
+    }
+    float softPattern(float value, float strength, float limit)
+    {
+        const float limited = std::tanh(value / std::max(0.0001f, limit)) * limit;
+        return std::clamp(limited * strength, -limit, limit);
+    }
+    glm::vec2 warped(float x, float z, float amount)
+    {
+        return {
+            x + centeredNoise(x * 0.72f + 13.1f, z * 0.72f - 9.4f) * amount,
+            z + centeredNoise(x * 0.68f - 4.7f, z * 0.68f + 21.3f) * amount,
+        };
+    }
+
+    //====== Terrain generation ======
+    float sandHeight(float x, float z, const TerrainSettings& settings)
+    {
+        const float amplitude = std::max(0.001f, settings.amplitude);
+        const auto dune_space = rotate(x, z, -0.28f);
+        const auto ripple_space = rotate(x, z, 0.72f);
+        const auto cross_ripple_space = rotate(x, z, -0.95f);
+
+        const float broad_dunes = (fbm(dune_space[0] + 12.0f, dune_space[1] - 7.0f, settings) - 0.5f) * amplitude;
+        const float dune_ridges = ridge(fbm(dune_space[0] * 0.72f - 5.0f, dune_space[1] * 0.28f + 9.0f, settings.frequency * 1.4f, 0.46f, 2.15f, 4));
+        const float ripple_mod = 0.55f + fbm(ripple_space[0] + 31.0f, ripple_space[1] - 19.0f, settings.frequency * 3.0f, 0.5f, 2.0f, 3) * 0.75f;
+        const float directional_ripples = std::sin(ripple_space[0] * 11.0f + ripple_space[1] * 0.75f + dune_ridges * 1.8f) * 0.035f * ripple_mod;
+        const float fine_cross_ripples = std::sin(cross_ripple_space[0] * 23.0f + cross_ripple_space[1] * 1.4f) * 0.011f;
+        const float granular_noise = (fbm(x + 4.0f, z - 2.0f, 8.5f, 0.38f, 2.3f, 3) - 0.5f) * 0.025f;
+
+        return broad_dunes + (dune_ridges - 0.5f) * amplitude * 0.28f + directional_ripples + fine_cross_ripples + granular_noise;
+    }
+    float cheapPatternHeight(float x, float z, const TerrainSettings& settings)
+    {
+        const float strength = std::max(0.0f, settings.pattern_strength);
+        const float scale = std::max(0.001f, settings.pattern_scale);
+        const auto warped_space = warped(x, z, 0.42f);
+
+        switch (std::clamp(settings.pattern, 0, 4)) {
+        case 1: {
+            const auto ripple_space = rotate(warped_space[0], warped_space[1], 0.72f);
+            const float phase_warp = centeredNoise(x * 1.15f + 33.0f, z * 1.15f - 17.0f) * 2.4f;
+            const float envelope = 0.65f + valueNoise(x * 0.48f - 8.0f, z * 0.48f + 6.0f) * 0.35f;
+            const float phase = ripple_space[0] * 8.2f * scale + ripple_space[1] * 1.18f + phase_warp;
+            const float primary = std::sin(phase) * 0.020f;
+            const float secondary = std::sin(phase * 1.73f + phase_warp * 0.35f) * 0.005f;
+            return softPattern((primary + secondary) * envelope, strength, 0.024f);
+        }
+        case 2: {
+            const float distance = std::sqrt(warped_space[0] * warped_space[0] + warped_space[1] * warped_space[1]);
+            const float bowl = -std::exp(-distance * distance * 1.55f * scale) * 0.18f;
+            const float rim = std::exp(-std::pow((distance - 1.25f) * 3.4f * scale, 2.0f)) * 0.11f;
+            return softPattern(bowl + rim, strength, 0.16f);
+        }
+        case 3: {
+            const auto dune_space = rotate(warped_space[0], warped_space[1], -0.28f);
+            const float phase = dune_space[0] * 1.65f * scale + dune_space[1] * 0.46f + centeredNoise(x * 0.55f, z * 0.55f) * 1.2f;
+            const float ridge_wave = 0.5f + 0.5f * std::sin(phase);
+            return softPattern((ridge(ridge_wave) - 0.5f) * 0.16f, strength, 0.075f);
+        }
+        case 4: {
+            const auto wave_space = rotate(warped_space[0], warped_space[1], 0.18f);
+            const float phase = wave_space[0] * 3.25f * scale + std::sin(wave_space[1] * 1.35f * scale) * 0.65f;
+            return softPattern(std::sin(phase) * 0.055f, strength, 0.045f);
+        }
+        default:
+            return 0.0f;
+        }
+    }
+
+    //======Setting comparison======
+    bool sameBaseSettings(const TerrainSettings& a, const TerrainSettings& b)
+    {
+        constexpr float epsilon = 0.0001f;
+        return std::abs(a.frequency - b.frequency) < epsilon &&
+            std::abs(a.amplitude - b.amplitude) < epsilon &&
+            std::abs(a.persistence - b.persistence) < epsilon &&
+            std::abs(a.lacunarity - b.lacunarity) < epsilon &&
+            a.octaves == b.octaves;
+    }
+
+    bool samePatternSettings(const TerrainSettings& a, const TerrainSettings& b)
+    {
+        constexpr float epsilon = 0.0001f;
+        return a.pattern == b.pattern &&
+            std::abs(a.pattern_strength - b.pattern_strength) < epsilon &&
+            std::abs(a.pattern_scale - b.pattern_scale) < epsilon;
+    }
+
+    bool sameFinalSettings(const TerrainSettings& a, const TerrainSettings& b)
+    {
+        constexpr float epsilon = 0.0001f;
+        return a.vignette == b.vignette &&
+            std::abs(a.moisture - b.moisture) < epsilon;
+    }
+    
+    //====== Rect helpers ======
+    Rect expanded(Rect rect, int amount)
+    {
+        return {
+            rect.x - amount,
+            rect.y - amount,
+            rect.w + amount * 2,
+            rect.h + amount * 2,
+        };
+    }
+
+    Rect clamped(Rect rect, int width, int height)
+    {
+        const int x1 = std::clamp(rect.x, 0, width);
+        const int y1 = std::clamp(rect.y, 0, height);
+        const int x2 = std::clamp(rect.x + rect.w, 0, width);
+        const int y2 = std::clamp(rect.y + rect.h, 0, height);
+        return {x1, y1, std::max(0, x2 - x1), std::max(0, y2 - y1)};
+    }
+
+    Rect merged(Rect a, Rect b)
+    {
+        if (a.w <= 0 || a.h <= 0) {
+            return b;
+        }
+        if (b.w <= 0 || b.h <= 0) {
+            return a;
+        }
+
+        const int x1 = std::min(a.x, b.x);
+        const int y1 = std::min(a.y, b.y);
+        const int x2 = std::max(a.x + a.w, b.x + b.w);
+        const int y2 = std::max(a.y + a.h, b.y + b.h);
+        return {x1, y1, x2 - x1, y2 - y1};
+    }
+
 }
 
-float centeredNoise(float x, float z)
-{
-    return valueNoise(x, z) - 0.5f;
-}
-
-float softPattern(float value, float strength, float limit)
-{
-    const float limited = std::tanh(value / std::max(0.0001f, limit)) * limit;
-    return std::clamp(limited * strength, -limit, limit);
-}
-
-std::array<float, 2> warped(float x, float z, float amount)
-{
-    return {
-        x + centeredNoise(x * 0.72f + 13.1f, z * 0.72f - 9.4f) * amount,
-        z + centeredNoise(x * 0.68f - 4.7f, z * 0.68f + 21.3f) * amount,
-    };
-}
-
-float cheapPatternHeight(float x, float z, const TerrainSettings& settings)
-{
-    const float strength = std::max(0.0f, settings.pattern_strength);
-    const float scale = std::max(0.001f, settings.pattern_scale);
-    const auto warped_space = warped(x, z, 0.42f);
-
-    switch (std::clamp(settings.pattern, 0, 4)) {
-    case 1: {
-        const auto ripple_space = rotate(warped_space[0], warped_space[1], 0.72f);
-        const float phase_warp = centeredNoise(x * 1.15f + 33.0f, z * 1.15f - 17.0f) * 2.4f;
-        const float envelope = 0.65f + valueNoise(x * 0.48f - 8.0f, z * 0.48f + 6.0f) * 0.35f;
-        const float phase = ripple_space[0] * 8.2f * scale + ripple_space[1] * 1.18f + phase_warp;
-        const float primary = std::sin(phase) * 0.020f;
-        const float secondary = std::sin(phase * 1.73f + phase_warp * 0.35f) * 0.005f;
-        return softPattern((primary + secondary) * envelope, strength, 0.024f);
-    }
-    case 2: {
-        const float distance = std::sqrt(warped_space[0] * warped_space[0] + warped_space[1] * warped_space[1]);
-        const float bowl = -std::exp(-distance * distance * 1.55f * scale) * 0.18f;
-        const float rim = std::exp(-std::pow((distance - 1.25f) * 3.4f * scale, 2.0f)) * 0.11f;
-        return softPattern(bowl + rim, strength, 0.16f);
-    }
-    case 3: {
-        const auto dune_space = rotate(warped_space[0], warped_space[1], -0.28f);
-        const float phase = dune_space[0] * 1.65f * scale + dune_space[1] * 0.46f + centeredNoise(x * 0.55f, z * 0.55f) * 1.2f;
-        const float ridge_wave = 0.5f + 0.5f * std::sin(phase);
-        return softPattern((ridge(ridge_wave) - 0.5f) * 0.16f, strength, 0.075f);
-    }
-    case 4: {
-        const auto wave_space = rotate(warped_space[0], warped_space[1], 0.18f);
-        const float phase = wave_space[0] * 3.25f * scale + std::sin(wave_space[1] * 1.35f * scale) * 0.65f;
-        return softPattern(std::sin(phase) * 0.055f, strength, 0.045f);
-    }
-    default:
-        return 0.0f;
-    }
-}
-}
+//====== SandCanvas: public API =====
 
 void SandCanvas::resize(Rect bounds)
 {
@@ -375,35 +369,7 @@ Rect SandCanvas::bounds() const
     return m_bounds;
 }
 
-void SandCanvas::blitTerrain(Renderer& renderer) const
-{
-    const int start_x = std::clamp(m_bounds.x, 0, renderer.width());
-    const int start_y = std::clamp(m_bounds.y, 0, renderer.height());
-    const int end_x = std::clamp(m_bounds.x + m_bounds.w, 0, renderer.width());
-    const int end_y = std::clamp(m_bounds.y + m_bounds.h, 0, renderer.height());
-    if (start_x >= end_x || start_y >= end_y || m_cacheWidth <= 0 || m_cacheHeight <= 0) {
-        return;
-    }
-
-    const int copy_width = std::min(end_x - start_x, m_cacheWidth - (start_x - m_bounds.x));
-    if (copy_width <= 0) {
-        return;
-    }
-
-    uint32_t* pixels = renderer.pixels();
-    for (int y = start_y; y < end_y; ++y) {
-        const int cache_y = y - m_bounds.y;
-        if (cache_y < 0 || cache_y >= m_cacheHeight) {
-            continue;
-        }
-
-        const int cache_x = start_x - m_bounds.x;
-        std::copy_n(
-            m_finalPixels.data() + static_cast<size_t>(cache_y) * static_cast<size_t>(m_cacheWidth) + static_cast<size_t>(cache_x),
-            copy_width,
-            pixels + static_cast<size_t>(y) * static_cast<size_t>(renderer.width()) + static_cast<size_t>(start_x));
-    }
-}
+//====== SandCanvas: cache management =====
 
 void SandCanvas::ensureCaches() const
 {
@@ -494,10 +460,44 @@ void SandCanvas::markFinalDirty(Rect rect) const
     m_finalDirty = true;
 }
 
+//===== SandCanvas: rendering =====
+
+void SandCanvas::blitTerrain(Renderer& renderer) const
+{
+    const int start_x = std::clamp(m_bounds.x, 0, renderer.width());
+    const int start_y = std::clamp(m_bounds.y, 0, renderer.height());
+    const int end_x = std::clamp(m_bounds.x + m_bounds.w, 0, renderer.width());
+    const int end_y = std::clamp(m_bounds.y + m_bounds.h, 0, renderer.height());
+    if (start_x >= end_x || start_y >= end_y || m_cacheWidth <= 0 || m_cacheHeight <= 0) {
+        return;
+    }
+
+    const int copy_width = std::min(end_x - start_x, m_cacheWidth - (start_x - m_bounds.x));
+    if (copy_width <= 0) {
+        return;
+    }
+
+    uint32_t* pixels = renderer.pixels();
+    for (int y = start_y; y < end_y; ++y) {
+        const int cache_y = y - m_bounds.y;
+        if (cache_y < 0 || cache_y >= m_cacheHeight) {
+            continue;
+        }
+
+        const int cache_x = start_x - m_bounds.x;
+        std::copy_n(
+            m_finalPixels.data() + static_cast<size_t>(cache_y) * static_cast<size_t>(m_cacheWidth) + static_cast<size_t>(cache_x),
+            copy_width,
+            pixels + static_cast<size_t>(y) * static_cast<size_t>(renderer.width()) + static_cast<size_t>(start_x));
+    }
+}
+
 uint32_t SandCanvas::shadePixel(int x, int y) const
 {
-    constexpr std::array<float, 3> light_dir = {0.32f, 0.84f, 0.43f};
-    constexpr std::array<float, 3> view_dir = {0.0f, 1.0f, 0.22f};
+    // constexpr std::array<float, 3> light_dir = {0.32f, 0.84f, 0.43f};
+    glm::vec3 light_dir = glm::normalize(glm::vec3(0.32f, 0.84f, 0.43f));
+    // constexpr std::array<float, 3> view_dir = {0.0f, 1.0f, 0.22f};
+    glm::vec3 view_dir = glm::vec3(0.0f, 1.0f, 0.22f);
     constexpr Color shadow = {102.0f, 74.0f, 39.0f};
     constexpr Color wet_shadow = {62.0f, 54.0f, 45.0f};
     constexpr Color low_sand = {157.0f, 111.0f, 54.0f};
@@ -513,20 +513,25 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
     const float down = combinedHeight(x, y - 1);
     const float up = combinedHeight(x, y + 1);
 
-    std::array<float, 3> normal = {left - right, sample_step * 2.0f, down - up};
-    normalize(normal);
+    // std::array<float, 3> normal = {left - right, sample_step * 2.0f, down - up};
+    // normalize(normal);
+    glm::vec3 normal = glm::normalize(glm::vec3(left - right,sample_step * 2.0f,down - up));
 
-    const float diffuse = std::max(0.0f, dot(normal, light_dir));
+
+    // const float diffuse = std::max(0.0f, dot(normal, light_dir));
+    const float diffuse=glm::max(0.0f, glm::dot(normal, light_dir));
     const float back_shadow = std::clamp((right - left + up - down) * 9.0f, -0.18f, 0.18f);
 
-    std::array<float, 3> half_dir = {
-        light_dir[0] + view_dir[0],
-        light_dir[1] + view_dir[1],
-        light_dir[2] + view_dir[2],
-    };
-    normalize(half_dir);
-    const float specular = std::pow(std::max(0.0f, dot(normal, half_dir)), 24.0f) * (0.18f + m_terrainSettings.moisture * 0.18f);
-
+    // std::array<float, 3> half_dir = {
+    //     light_dir[0] + view_dir[0],
+    //     light_dir[1] + view_dir[1],
+    //     light_dir[2] + view_dir[2],
+    // };
+    
+    glm::vec3 half_dir = glm::normalize(glm::vec3(light_dir[0] + view_dir[0], light_dir[1] + view_dir[1], light_dir[2] + view_dir[2]));
+    
+    // const float specular = std::pow(std::max(0.0f, dot(normal, half_dir)), 24.0f) * (0.18f + m_terrainSettings.moisture * 0.18f);
+    const float specular = std::pow(glm::max(0.0f, glm::dot(normal, half_dir)), 24.0f) * (0.18f + m_terrainSettings.moisture * 0.18f);
     const float u = static_cast<float>(x) / static_cast<float>(std::max(1, m_cacheWidth - 1));
     const float v = static_cast<float>(y) / static_cast<float>(std::max(1, m_cacheHeight - 1));
     const float amplitude = std::max(0.001f, m_terrainSettings.amplitude);
@@ -567,6 +572,8 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
         toByte(lit.b + grain * 0.55f));
 }
 
+//===== SandCanvas: height sampling =====
+
 float SandCanvas::combinedHeight(int x, int y) const
 {
     const int sample_x = std::clamp(x, 0, std::max(0, m_cacheWidth - 1));
@@ -581,6 +588,8 @@ float SandCanvas::patternHeight(int x, int y) const
     const int sample_y = std::clamp(y, 0, std::max(0, m_cacheHeight - 1));
     return m_patternHeight[static_cast<size_t>(sample_y) * static_cast<size_t>(m_cacheWidth) + static_cast<size_t>(sample_x)];
 }
+
+//===== SandCanvas: coordinate conversion =====
 
 float SandCanvas::worldX(int x) const
 {

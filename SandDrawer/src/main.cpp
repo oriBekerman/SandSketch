@@ -71,6 +71,10 @@ int main()
     setup_microui(ui_context);
     mfb_set_char_input_callback(ui_bridge_char_input, window);
 
+    int last_mouse_x = 0;
+    int last_mouse_y = 0;
+    bool was_drawing = false;
+
     while (mfb_update_events(window) != MFB_STATE_EXIT) {
         const int window_width = mfb_get_window_width(window);
         const int window_height = mfb_get_window_height(window);
@@ -89,15 +93,15 @@ int main()
         // Test window
         static int test_checkbox = 0;
 
-        if (mu_begin_window(&ui_context, "Test Window", mu_rect(350, 20, 200, 100))) {
+        // if (mu_begin_window(&ui_context, "Test Window", mu_rect(350, 20, 200, 100))) {
 
-            int widths[] = { -1 };
-            mu_layout_row(&ui_context, 1, widths, 0);
+        //     int widths[] = { -1 };
+        //     mu_layout_row(&ui_context, 1, widths, 0);
 
-            mu_checkbox(&ui_context, "Test Checkbox", &test_checkbox);
+        //     mu_checkbox(&ui_context, "Test Checkbox", &test_checkbox);
 
-            mu_end_window(&ui_context);
-        }
+        //     mu_end_window(&ui_context);
+        // }
         mu_end(&ui_context);
 
         canvas.set_terrain_settings(panel_state.terrain);
@@ -108,14 +112,54 @@ int main()
             simulation.clear();
         }
 
+        // const int mouse_x = mfb_get_mouse_x(window);
+        // const int mouse_y = mfb_get_mouse_y(window);
+        // const uint8_t* mouse_buttons = mfb_get_mouse_button_buffer(window);
+        // if (contains(canvas.bounds(), mouse_x, mouse_y)) {
+        //     if (mouse_buttons[MFB_MOUSE_LEFT] != 0) {
+        //         canvas.apply_brush(mouse_x, mouse_y, panel_state.brush_size, panel_state.brush_strength);
+        //     } else if (mouse_buttons[MFB_MOUSE_RIGHT] != 0) {
+        //         canvas.apply_brush(mouse_x, mouse_y, panel_state.brush_size, -panel_state.brush_strength);
+        //     }
+        // }
+
         const int mouse_x = mfb_get_mouse_x(window);
         const int mouse_y = mfb_get_mouse_y(window);
         const uint8_t* mouse_buttons = mfb_get_mouse_button_buffer(window);
+
         if (contains(canvas.bounds(), mouse_x, mouse_y)) {
-            if (mouse_buttons[MFB_MOUSE_LEFT] != 0) {
-                canvas.apply_brush(mouse_x, mouse_y, panel_state.brush_size, panel_state.brush_strength);
-            } else if (mouse_buttons[MFB_MOUSE_RIGHT] != 0) {
-                canvas.apply_brush(mouse_x, mouse_y, panel_state.brush_size, -panel_state.brush_strength);
+            if (mouse_buttons[MFB_MOUSE_LEFT]) {
+
+                if (was_drawing) {
+                    float dx = mouse_x - last_mouse_x;
+                    float dy = mouse_y - last_mouse_y;
+                    float dist = std::sqrt(dx * dx + dy * dy);
+
+                    float spacing = std::max(1.0f, panel_state.brush_size * 0.35f);
+
+                    for (float d = 0; d <= dist; d += spacing) {
+                        float t = (dist > 0.0f) ? d / dist : 0.0f;
+
+                        canvas.apply_brush(
+                            int(last_mouse_x + dx * t),
+                            int(last_mouse_y + dy * t),
+                            panel_state.brush_size,
+                            panel_state.brush_strength);
+                    }
+                } else {
+                    canvas.apply_brush(
+                        mouse_x,
+                        mouse_y,
+                        panel_state.brush_size,
+                        panel_state.brush_strength);
+                }
+
+                last_mouse_x = mouse_x;
+                last_mouse_y = mouse_y;
+                was_drawing = true;
+            }
+            else {
+                was_drawing = false;
             }
         }
 

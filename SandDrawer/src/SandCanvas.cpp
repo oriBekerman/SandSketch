@@ -10,6 +10,11 @@
 namespace {
     constexpr uint32_t kCanvasBorderColor = MFB_RGB(170, 145, 96);
     constexpr float kSandExtent = 8.0f;
+    constexpr float kPatternScaleMin = 0.35f;
+    constexpr float kPatternScaleMax = 1.36f;
+    constexpr float kDefaultCraterSpacing = 1.45f;
+    constexpr int kMinCraterCount = 3;
+    constexpr int kMaxCraterCount = 18;
 
     //====== Color Utilities ======
     struct Color {
@@ -43,15 +48,10 @@ namespace {
         return {a.r + b.r, a.g + b.g, a.b + b.b};
     }
 
-     struct SandPalette {
-        Color shadow;
-        Color wet_shadow;
-        Color low;
-        Color mid;
-        Color warm;
-        Color wet;
-        Color highlight;
-    };
+    Color toColor(SandColor color)
+    {
+        return {color.r, color.g, color.b};
+    }
 
     //====== Noise Generation Functions ======
     float fract(float value)
@@ -67,6 +67,12 @@ namespace {
     float smoothstep(float value)
     {
         return value * value * (3.0f - 2.0f * value);
+    }
+
+    float smoothstep(float edge0, float edge1, float value)
+    {
+        const float t = std::clamp((value - edge0) / std::max(0.0001f, edge1 - edge0), 0.0f, 1.0f);
+        return smoothstep(t);
     }
 
     float valueNoise(float x, float z)
@@ -118,7 +124,7 @@ namespace {
         return 1.0f - std::abs(value * 2.0f - 1.0f);
     }
 
-    //====== enviroment / Pattern helpers ======
+    //====== Preset / Pattern helpers ======
     glm::vec2 rotate(float x, float z, float radians)
     {
         const float c = std::cos(radians);
@@ -142,91 +148,123 @@ namespace {
             z + centeredNoise(x * 0.68f - 4.7f, z * 0.68f + 21.3f) * amount,
         };
     }
-SandPalette paletteFor(SandType env)
-{
-    switch (env)
+
+    float craterProfile(float x, float z)
     {
-    case SandType::Sahara:
-        return {
-            {102, 74, 39},    // shadow
-            {62, 54, 45},     // wet shadow
-            {157,111, 54},    // low
-            {199,154, 82},    // mid
-            {225,183,109},    // warm
-            {121,103, 78},    // wet
-            {255,228,163}     // highlight
-        };
-
-    case SandType::WhiteBeach:
-        return {
-            {150,145,140},
-            {120,118,112},
-            {210,205,195},
-            {232,228,218},
-            {245,241,232},
-            {185,180,170},
-            {255,252,245}
-        };
-
-    case SandType::RedDesert:
-        return {
-            {80,35,20},
-            {60,32,24},
-            {145,70,35},
-            {185,95,45},
-            {225,140,75},
-            {120,70,45},
-            {255,190,120}
-        };
+        const float r = std::sqrt(x * x + z * z);
+        const float inner_slope = 1.0f - smoothstep(0.0f, 0.82f, r);
+        const float bowl = -inner_slope * inner_slope * 0.82f;
+        const float rim = smoothstep(0.78f, 0.98f, r) * (1.0f - smoothstep(0.98f, 1.18f, r)) * 0.34f;
+        return bowl + rim;
     }
 
-    // Default: Sahara
-    return {
-        {102, 74, 39},
-        {62, 54, 45},
-        {157,111, 54},
-        {199,154, 82},
-        {225,183,109},
-        {121,103, 78},
-        {255,228,163}
-    };
-}
+    int craterCountForScale(float pattern_scale)
+    {
+        const float t = std::clamp((pattern_scale - kPatternScaleMin) / (kPatternScaleMax - kPatternScaleMin), 0.0f, 1.0f);
+        return kMinCraterCount + static_cast<int>(std::round(t * static_cast<float>(kMaxCraterCount - kMinCraterCount)));
+    }
+
+    float craterPatternHeight(float x, float z, const TerrainSettings& settings)
+    {
+        const float radius = std::max(0.12f, settings.crater_size);
+        const float depth = std::max(0.0f, settings.crater_depth);
+        const float strength = std::max(0.0f, settings.pattern_strength);
+        if (depth <= 0.0f || strength <= 0.0f) {
+            return 0.0f;
+        }
+
+        const int crater_count = craterCountForScale(settings.pattern_scale);
+        const float spacing = std::max(0.45f, settings.crater_spacing) / kDefaultCraterSpacing;
+        const float min_center_distance = radius * 2.45f * spacing;
+        const float center_extent = std::max(kSandExtent * 0.40f, min_center_distance * 1.35f);
+        std::array<glm::vec2, kMaxCraterCount> centers = {};
+        int accepted_count = 0;
+
+        for (int candidate = 0; candidate < 256 && accepted_count < crater_count; ++candidate) {
+            const float base_x =
+                candidate == 0 ? -0.48f :
+                candidate == 1 ? 0.34f :
+                candidate == 2 ? -0.05f :
+                hash(static_cast<float>(candidate) + 11.3f, 4.7f) * 2.0f - 1.0f;
+            const float base_z =
+                candidate == 0 ? -0.28f :
+                candidate == 1 ? 0.18f :
+                candidate == 2 ? 0.52f :
+                hash(static_cast<float>(candidate) - 23.1f, 18.9f) * 2.0f - 1.0f;
+            const glm::vec2 center = {base_x * center_extent, base_z * center_extent};
+            bool has_clearance = true;
+            for (int i = 0; i < accepted_count; ++i) {
+                const glm::vec2 delta = center - centers[static_cast<size_t>(i)];
+                if (glm::dot(delta, delta) < min_center_distance * min_center_distance) {
+                    has_clearance = false;
+                    break;
+                }
+            }
+            if (has_clearance) {
+                centers[static_cast<size_t>(accepted_count)] = center;
+                ++accepted_count;
+            }
+        }
+
+        float profile = 0.0f;
+
+        for (int crater = 0; crater < accepted_count; ++crater) {
+            const glm::vec2 center = centers[static_cast<size_t>(crater)];
+            const float local_x = (x - center.x) / radius;
+            const float local_z = (z - center.y) / radius;
+            profile += craterProfile(local_x, local_z);
+        }
+
+        return std::tanh(profile * 0.82f) * depth * strength;
+    }
     //====== Terrain generation ======
 
     float baseTerrainHeight(float x, float z, const TerrainSettings& settings)
     {
         const float amplitude = std::max(0.001f, settings.amplitude);
         const auto dune_space = rotate(x, z, -0.28f);
-        switch (settings.env) 
-        {
-            case TerrainType::Flat:
-                return 0.0f;
-
-            case TerrainType::NaturalFBm: {
-                return (fbm(dune_space[0] + 12.0f,dune_space[1] - 7.0f,settings) - 0.5f) * amplitude;
-            }
-
-            // case TerrainType::LargeDunes: {
-            //     float broad = (fbm(dune_space[0] + 12.0f,dune_space[1] - 7.0f,settings) - 0.5f) * amplitude;
-            //     float ridges = ridge(fbm(dune_space[0] * 0.72f - 5.0f,dune_space[1] * 0.28f + 9.0f,
-            //         settings.frequency * 1.4f,0.46f,2.15f,4));
-            //     return broad + (ridges - 0.5f) * amplitude * 0.28f;
-            // }
-
-            case TerrainType::LargeDunes: {
-                const float duneFreq = settings.frequency * 0.15f;
-
-                float broad = (fbm(dune_space[0] + 12.0f,dune_space[1] - 7.0f,duneFreq,
-                    settings.persistence,settings.lacunarity,settings.octaves) - 0.5f) * amplitude;
-
-                float ridges = ridge(fbm(dune_space[0] * 0.35f - 5.0f,dune_space[1] * 0.12f + 9.0f,duneFreq * 0.8f,0.46f,2.15f,4));
-                return broad + (ridges - 0.5f) * amplitude * 0.35f;
-            }
-
-            case TerrainType::Rocky: {
-                float n = fbm(x * 2.4f, z * 2.4f, settings);
-                return (ridge(n) - 0.5f) * amplitude * 1.2f;
-            }
+        switch (settings.preset) {
+        case SandPreset::Sahara: {
+            const float dune_frequency = settings.frequency * 0.15f;
+            const float broad = (fbm(
+                dune_space[0] + 12.0f,
+                dune_space[1] - 7.0f,
+                dune_frequency,
+                settings.persistence,
+                settings.lacunarity,
+                settings.octaves) - 0.5f) * amplitude;
+            const float ridges = ridge(fbm(
+                dune_space[0] * 0.35f - 5.0f,
+                dune_space[1] * 0.12f + 9.0f,
+                dune_frequency * 0.8f,
+                0.46f,
+                2.15f,
+                settings.octaves));
+            return broad + (ridges - 0.5f) * amplitude * 0.35f;
+        }
+        case SandPreset::WhiteBeach: {
+            const float flats = centeredNoise(x * 0.48f + 11.0f, z * 0.48f - 3.0f) * amplitude * 0.045f;
+            const float soft_undulation = (fbm(dune_space[0] + 4.0f, dune_space[1] - 2.0f, 0.07f, 0.42f, 2.0f, settings.octaves) - 0.5f) * amplitude * 0.10f;
+            return flats + soft_undulation;
+        }
+        case SandPreset::Mars: {
+            const float broad = (fbm(
+                dune_space[0] + 12.0f,
+                dune_space[1] - 7.0f,
+                settings.frequency * 0.28f,
+                settings.persistence,
+                settings.lacunarity,
+                settings.octaves) - 0.5f) * amplitude * 0.9f;
+            const float ridges = ridge(fbm(
+                dune_space[0] * 0.78f - 5.0f,
+                dune_space[1] * 0.26f + 9.0f,
+                settings.frequency * 0.55f,
+                0.52f,
+                2.25f,
+                settings.octaves));
+            const float rough = centeredNoise(x * 1.9f + 17.0f, z * 1.9f - 6.0f) * amplitude * 0.10f;
+            return broad + (ridges - 0.5f) * amplitude * 0.52f + rough;
+        }
         }
         return 0.0f;
     }
@@ -264,6 +302,9 @@ SandPalette paletteFor(SandType env)
                 const float b = std::sin(p2[0] * 13.0f * scale);
                 return softPattern((a + b) * 0.018f, strength, 0.04f);
             }
+
+            case SurfacePattern::Craters:
+                return craterPatternHeight(x, z, settings);
         }
         return 0.0f;
     }
@@ -272,7 +313,7 @@ SandPalette paletteFor(SandType env)
     bool sameBaseSettings(const TerrainSettings& a, const TerrainSettings& b)
     {
         constexpr float epsilon = 0.0001f;
-        return a.env == b.env &&
+        return a.preset == b.preset &&
             std::abs(a.frequency - b.frequency) < epsilon &&
             std::abs(a.amplitude - b.amplitude) < epsilon &&
             std::abs(a.persistence - b.persistence) < epsilon &&
@@ -285,20 +326,68 @@ SandPalette paletteFor(SandType env)
         constexpr float epsilon = 0.0001f;
         return a.surface_pattern == b.surface_pattern &&
             std::abs(a.pattern_strength - b.pattern_strength) < epsilon &&
-            std::abs(a.pattern_scale - b.pattern_scale) < epsilon;
+            std::abs(a.pattern_scale - b.pattern_scale) < epsilon &&
+            std::abs(a.crater_spacing - b.crater_spacing) < epsilon &&
+            std::abs(a.crater_size - b.crater_size) < epsilon &&
+            std::abs(a.crater_depth - b.crater_depth) < epsilon;
     }
 
-    bool sameSandType(const TerrainSettings& a, const TerrainSettings& b)
+    bool sameColor(SandColor a, SandColor b)
     {
-        return a.sand_type == b.sand_type;
+        constexpr float epsilon = 0.0001f;
+        return std::abs(a.r - b.r) < epsilon &&
+            std::abs(a.g - b.g) < epsilon &&
+            std::abs(a.b - b.b) < epsilon;
+    }
+
+    bool sameMaterial(const SandMaterial& a, const SandMaterial& b)
+    {
+        constexpr float epsilon = 0.0001f;
+        return sameColor(a.palette.shadow, b.palette.shadow) &&
+            sameColor(a.palette.wet_shadow, b.palette.wet_shadow) &&
+            sameColor(a.palette.low, b.palette.low) &&
+            sameColor(a.palette.mid, b.palette.mid) &&
+            sameColor(a.palette.warm, b.palette.warm) &&
+            sameColor(a.palette.wet, b.palette.wet) &&
+            sameColor(a.palette.highlight, b.palette.highlight) &&
+            std::abs(a.fine_grain_scale - b.fine_grain_scale) < epsilon &&
+            std::abs(a.coarse_grain_scale - b.coarse_grain_scale) < epsilon &&
+            std::abs(a.grain_strength - b.grain_strength) < epsilon &&
+            std::abs(a.shadow_strength - b.shadow_strength) < epsilon &&
+            std::abs(a.diffuse_strength - b.diffuse_strength) < epsilon &&
+            std::abs(a.specular_strength - b.specular_strength) < epsilon;
     }
 
     bool sameFinalSettings(const TerrainSettings& a, const TerrainSettings& b)
     {
         constexpr float epsilon = 0.0001f;
-        return a.sand_type == b.sand_type &&
-            a.vignette == b.vignette &&
-            std::abs(a.moisture - b.moisture) < epsilon;
+        return a.vignette == b.vignette &&
+            std::abs(a.moisture - b.moisture) < epsilon &&
+            sameMaterial(a.material, b.material);
+    }
+
+    void clampColor(SandColor& color)
+    {
+        color.r = std::clamp(color.r, 0.0f, 255.0f);
+        color.g = std::clamp(color.g, 0.0f, 255.0f);
+        color.b = std::clamp(color.b, 0.0f, 255.0f);
+    }
+
+    void clampMaterial(SandMaterial& material)
+    {
+        clampColor(material.palette.shadow);
+        clampColor(material.palette.wet_shadow);
+        clampColor(material.palette.low);
+        clampColor(material.palette.mid);
+        clampColor(material.palette.warm);
+        clampColor(material.palette.wet);
+        clampColor(material.palette.highlight);
+        material.fine_grain_scale = std::max(0.001f, material.fine_grain_scale);
+        material.coarse_grain_scale = std::max(0.001f, material.coarse_grain_scale);
+        material.grain_strength = std::max(0.0f, material.grain_strength);
+        material.shadow_strength = std::max(0.0f, material.shadow_strength);
+        material.diffuse_strength = std::max(0.0f, material.diffuse_strength);
+        material.specular_strength = std::max(0.0f, material.specular_strength);
     }
     
     //====== Rect helpers ======
@@ -413,15 +502,23 @@ void SandCanvas::apply_brush(int screen_x, int screen_y, float radius, float str
 
 void SandCanvas::set_terrain_settings(TerrainSettings settings)
 {
+    float max_freq=std::max(2.0f, settings.frequency);
+    float max_amp=std::max(5.0f, settings.amplitude);
+    float max_lac=std::max(5.0f, settings.lacunarity);
+    
     settings.frequency = std::max(0.001f, settings.frequency);
     settings.amplitude = std::max(0.0f, settings.amplitude);
-    settings.persistence = std::clamp(settings.persistence, 0.0f, 1.0f);
+    settings.persistence = std::clamp(settings.persistence, 0.0f, 5.0f);
     settings.lacunarity = std::max(0.001f, settings.lacunarity);
-    settings.octaves = std::clamp(settings.octaves, 1, 8);
+    settings.octaves = octavesFor(settings.preset);
     settings.vignette = settings.vignette != 0 ? 1 : 0;
     settings.pattern_strength = std::max(0.0f, settings.pattern_strength);
     settings.pattern_scale = std::max(0.001f, settings.pattern_scale);
+    settings.crater_spacing = std::max(0.45f, settings.crater_spacing);
+    settings.crater_size = std::max(0.12f, settings.crater_size);
+    settings.crater_depth = std::max(0.0f, settings.crater_depth);
     settings.moisture = std::clamp(settings.moisture, 0.0f, 1.0f);
+    clampMaterial(settings.material);
 
     const bool base_changed = !sameBaseSettings(m_terrainSettings, settings);
     const bool pattern_changed = !samePatternSettings(m_terrainSettings, settings);
@@ -431,8 +528,8 @@ void SandCanvas::set_terrain_settings(TerrainSettings settings)
 
     if (base_changed) {
         m_baseDirty = true;
-        m_patternDirty = true;
-    } else if (pattern_changed) {
+    }
+    if (pattern_changed) {
         m_patternDirty = true;
     }
 
@@ -576,90 +673,10 @@ void SandCanvas::blitTerrain(Renderer& renderer) const
     }
 }
 
-// uint32_t SandCanvas::shadePixel(int x, int y) const
-// {
-//     // constexpr std::array<float, 3> light_dir = {0.32f, 0.84f, 0.43f};
-//     glm::vec3 light_dir = glm::normalize(glm::vec3(0.32f, 0.84f, 0.43f));
-//     // constexpr std::array<float, 3> view_dir = {0.0f, 1.0f, 0.22f};
-//     glm::vec3 view_dir = glm::vec3(0.0f, 1.0f, 0.22f);
-//     constexpr Color shadow = {102.0f, 74.0f, 39.0f};
-//     constexpr Color wet_shadow = {62.0f, 54.0f, 45.0f};
-//     constexpr Color low_sand = {157.0f, 111.0f, 54.0f};
-//     constexpr Color mid_sand = {199.0f, 154.0f, 82.0f};
-//     constexpr Color warm_sand = {225.0f, 183.0f, 109.0f};
-//     constexpr Color wet_sand = {121.0f, 103.0f, 78.0f};
-//     constexpr Color highlight_sand = {255.0f, 228.0f, 163.0f};
-
-//     const float sample_step = kSandExtent / static_cast<float>(std::max(m_cacheWidth, m_cacheHeight));
-//     const float center = combinedHeight(x, y);
-//     const float left = combinedHeight(x - 1, y);
-//     const float right = combinedHeight(x + 1, y);
-//     const float down = combinedHeight(x, y - 1);
-//     const float up = combinedHeight(x, y + 1);
-
-//     // std::array<float, 3> normal = {left - right, sample_step * 2.0f, down - up};
-//     // normalize(normal);
-//     glm::vec3 normal = glm::normalize(glm::vec3(left - right,sample_step * 2.0f,down - up));
-
-
-//     // const float diffuse = std::max(0.0f, dot(normal, light_dir));
-//     const float diffuse=glm::max(0.0f, glm::dot(normal, light_dir));
-//     const float back_shadow = std::clamp((right - left + up - down) * 9.0f, -0.18f, 0.18f);
-
-//     // std::array<float, 3> half_dir = {
-//     //     light_dir[0] + view_dir[0],
-//     //     light_dir[1] + view_dir[1],
-//     //     light_dir[2] + view_dir[2],
-//     // };
-    
-//     glm::vec3 half_dir = glm::normalize(glm::vec3(light_dir[0] + view_dir[0], light_dir[1] + view_dir[1], light_dir[2] + view_dir[2]));
-    
-//     // const float specular = std::pow(std::max(0.0f, dot(normal, half_dir)), 24.0f) * (0.18f + m_terrainSettings.moisture * 0.18f);
-//     const float specular = std::pow(glm::max(0.0f, glm::dot(normal, half_dir)), 24.0f) * (0.18f + m_terrainSettings.moisture * 0.18f);
-//     const float u = static_cast<float>(x) / static_cast<float>(std::max(1, m_cacheWidth - 1));
-//     const float v = static_cast<float>(y) / static_cast<float>(std::max(1, m_cacheHeight - 1));
-//     const float amplitude = std::max(0.001f, m_terrainSettings.amplitude);
-//     const float height_t = std::clamp(0.5f + center / (amplitude * 1.7f), 0.0f, 1.0f);
-//     const float palette_noise = valueNoise(worldX(x) * 2.7f + 10.0f, worldZ(y) * 2.7f - 4.0f);
-//     const float moisture = std::clamp(m_terrainSettings.moisture, 0.0f, 1.0f);
-
-//     Color sand = mix(low_sand, mid_sand, height_t);
-//     sand = mix(sand, warm_sand, std::clamp(diffuse * 0.55f + palette_noise * 0.18f, 0.0f, 1.0f));
-//     sand = mix(sand, wet_sand, moisture * 0.62f);
-//     sand = mix(mix(shadow, wet_shadow, moisture), sand, std::clamp(0.42f + diffuse * 0.76f - back_shadow, 0.0f, 1.0f));
-
-//     const float pattern_center = patternHeight(x, y);
-//     const float pattern_slope = std::abs(patternHeight(x + 1, y) - patternHeight(x - 1, y)) +
-//         std::abs(patternHeight(x, y + 1) - patternHeight(x, y - 1));
-//     const float pattern_crest = std::clamp(pattern_center * 38.0f + pattern_slope * 14.0f, 0.0f, 1.0f);
-//     const float pattern_highlight = pattern_crest * pattern_crest * 0.055f * diffuse;
-//     const float ambient = 0.34f - moisture * 0.05f;
-//     float shade = ambient + diffuse * (0.82f - moisture * 0.12f) + specular + pattern_highlight;
-
-//     const float nx = u * 2.0f - 1.0f;
-//     const float ny = v * 2.0f - 1.0f;
-//     if (m_terrainSettings.vignette != 0) {
-//         const float vignette = std::clamp(1.0f - (nx * nx + ny * ny) * 0.26f, 0.72f, 1.0f);
-//         shade *= vignette;
-//     }
-
-//     const float wx = worldX(x);
-//     const float wz = worldZ(y);
-//     const float fine_grain = (valueNoise(wx * 48.0f, wz * 48.0f) - 0.5f) * 13.0f * (1.0f - moisture * 0.45f);
-//     const float coarse_grain = (valueNoise(wx * 18.0f + 5.0f, wz * 18.0f - 7.0f) - 0.5f) * 7.0f * (1.0f - moisture * 0.35f);
-//     const Color lit = sand * shade + highlight_sand * specular;
-//     const float grain = fine_grain + coarse_grain + pattern_highlight * 16.0f;
-
-//     return MFB_RGB(
-//         toByte(lit.r + grain),
-//         toByte(lit.g + grain * 0.82f),
-//         toByte(lit.b + grain * 0.55f));
-// }
-
-
 uint32_t SandCanvas::shadePixel(int x, int y) const
 {
-    const SandPalette p = paletteFor(m_terrainSettings.sand_type);
+    const SandMaterial& material = m_terrainSettings.material;
+    const SandPalette& p = material.palette;
 
     glm::vec3 light_dir = glm::normalize(glm::vec3(0.32f, 0.84f, 0.43f));
     glm::vec3 view_dir  = glm::normalize(glm::vec3(0.0f, 1.0f, 0.22f));
@@ -681,7 +698,7 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
 
     const float diffuse = glm::max(0.0f, glm::dot(normal, light_dir));
     const float back_shadow =
-        std::clamp((right - left + up - down) * 9.0f, -0.18f, 0.18f);
+        std::clamp((right - left + up - down) * 9.0f * material.shadow_strength, -0.28f, 0.28f);
 
     glm::vec3 half_dir = glm::normalize(light_dir + view_dir);
 
@@ -689,7 +706,7 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
 
     const float specular =
         std::pow(glm::max(0.0f, glm::dot(normal, half_dir)), 24.0f) *
-        (0.18f + moisture * 0.18f);
+        (0.18f + moisture * 0.18f) * material.specular_strength;
 
     const float u = static_cast<float>(x) /
         static_cast<float>(std::max(1, m_cacheWidth - 1));
@@ -704,20 +721,20 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
     const float palette_noise =
         valueNoise(worldX(x) * 2.7f + 10.0f, worldZ(y) * 2.7f - 4.0f);
 
-    Color sand = mix(p.low, p.mid, height_t);
+    Color sand = mix(toColor(p.low), toColor(p.mid), height_t);
 
     sand = mix(
         sand,
-        p.warm,
-        std::clamp(diffuse * 0.55f + palette_noise * 0.18f, 0.0f, 1.0f)
+        toColor(p.warm),
+        std::clamp(diffuse * 0.55f * material.diffuse_strength + palette_noise * 0.18f, 0.0f, 1.0f)
     );
 
-    sand = mix(sand, p.wet, moisture * 0.62f);
+    sand = mix(sand, toColor(p.wet), moisture * 0.62f);
 
     sand = mix(
-        mix(p.shadow, p.wet_shadow, moisture),
+        mix(toColor(p.shadow), toColor(p.wet_shadow), moisture),
         sand,
-        std::clamp(0.42f + diffuse * 0.76f - back_shadow, 0.0f, 1.0f)
+        std::clamp(0.42f + diffuse * 0.76f * material.diffuse_strength - back_shadow, 0.0f, 1.0f)
     );
 
     const float pattern_center = patternHeight(x, y);
@@ -736,7 +753,7 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
 
     float shade =
         ambient +
-        diffuse * (0.82f - moisture * 0.12f) +
+        diffuse * material.diffuse_strength * (0.82f - moisture * 0.12f) +
         specular +
         pattern_highlight;
 
@@ -753,14 +770,14 @@ uint32_t SandCanvas::shadePixel(int x, int y) const
     const float wz = worldZ(y);
 
     const float fine_grain =
-        (valueNoise(wx * 48.0f, wz * 48.0f) - 0.5f) *
-        13.0f * (1.0f - moisture * 0.45f);
+        (valueNoise(wx * material.fine_grain_scale, wz * material.fine_grain_scale) - 0.5f) *
+        13.0f * material.grain_strength * (1.0f - moisture * 0.45f);
 
     const float coarse_grain =
-        (valueNoise(wx * 18.0f + 5.0f, wz * 18.0f - 7.0f) - 0.5f) *
-        7.0f * (1.0f - moisture * 0.35f);
+        (valueNoise(wx * material.coarse_grain_scale + 5.0f, wz * material.coarse_grain_scale - 7.0f) - 0.5f) *
+        7.0f * material.grain_strength * (1.0f - moisture * 0.35f);
 
-    const Color lit = sand * shade + p.highlight * specular;
+    const Color lit = sand * shade + toColor(p.highlight) * specular;
     const float grain = fine_grain + coarse_grain + pattern_highlight * 16.0f;
 
     return MFB_RGB(

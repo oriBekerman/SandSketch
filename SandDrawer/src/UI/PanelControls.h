@@ -103,14 +103,17 @@ inline bool draw_int_slider(mu_Context* ctx,
                             int height = 0)
 {
     float slider_value = static_cast<float>(*value);
-    const bool changed = labeled_slider(
+    labeled_control_row(ctx, height);
+    mu_label(ctx, label_text);
+    const bool changed = mu_slider_ex(
         ctx,
-        label_text,
         &slider_value,
         static_cast<float>(min_value),
         static_cast<float>(max_value),
-        height
-    );
+        1.0f,
+        "%.0f",
+        MU_OPT_ALIGNCENTER
+    ) != 0;
 
     if (slider_value < min_value) slider_value = static_cast<float>(min_value);
     if (slider_value > max_value) slider_value = static_cast<float>(max_value);

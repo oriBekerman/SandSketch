@@ -43,6 +43,30 @@ inline bool button(mu_Context* ctx,const char* text,int height = 0)
     return mu_button(ctx, text) != 0;
 }
 
+inline bool selected_button(mu_Context* ctx,const char* text,bool selected,int height = 0)
+{
+    full_width_row(ctx, height);
+    if (!selected || ctx->style == nullptr) {
+        return mu_button(ctx, text) != 0;
+    }
+
+    const mu_Color button = ctx->style->colors[MU_COLOR_BUTTON];
+    const mu_Color hover = ctx->style->colors[MU_COLOR_BUTTONHOVER];
+    const mu_Color focus = ctx->style->colors[MU_COLOR_BUTTONFOCUS];
+
+    ctx->style->colors[MU_COLOR_BUTTON] = mu_color(154, 98, 30, 255);
+    ctx->style->colors[MU_COLOR_BUTTONHOVER] = mu_color(178, 118, 38, 255);
+    ctx->style->colors[MU_COLOR_BUTTONFOCUS] = mu_color(204, 141, 50, 255);
+
+    const bool pressed = mu_button(ctx, text) != 0;
+
+    ctx->style->colors[MU_COLOR_BUTTON] = button;
+    ctx->style->colors[MU_COLOR_BUTTONHOVER] = hover;
+    ctx->style->colors[MU_COLOR_BUTTONFOCUS] = focus;
+
+    return pressed;
+}
+
 inline bool checkbox(mu_Context* ctx,const char* text,int* value,int height = 0)
 {
     full_width_row(ctx, height);

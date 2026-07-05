@@ -82,10 +82,8 @@ const char* sand_preset_name(SandPreset preset)
 
 bool sand_preset_button(mu_Context* ctx, TerrainSettings& settings, SandPreset preset)
 {
-    char label[32] = {};
     const bool selected = settings.preset == preset;
-    std::snprintf(label, sizeof(label), selected ? "%s *" : "%s", sand_preset_name(preset));
-    if (!panel_controls::button(ctx, label)) {
+    if (!panel_controls::selected_button(ctx, sand_preset_name(preset), selected)) {
         return false;
     }
     const SandPreset previous = settings.preset;
@@ -112,17 +110,12 @@ void draw_material_color_sliders(mu_Context* ctx, const char* label, SandColor& 
 
 bool surface_pattern_button(mu_Context* ctx, TerrainSettings& settings, SurfacePattern pattern)
 {
-    char label[32] = {};
     const bool selected = settings.surface_pattern == pattern;
-    std::snprintf(label, sizeof(label), selected ? "%s *" : "%s", surface_pattern_name(pattern));
-    if (!panel_controls::button(ctx, label)) {
+    if (!panel_controls::selected_button(ctx, surface_pattern_name(pattern), selected)) {
         return false;
     }
     const SurfacePattern previous = settings.surface_pattern;
     settings.surface_pattern = pattern;
-    if (pattern == SurfacePattern::Craters && previous != SurfacePattern::Craters) {
-        settings.pattern_scale = kCraterMinPatternScale;
-    }
     if (previous != settings.surface_pattern) {
         std::fprintf(
             stderr,

@@ -55,7 +55,7 @@ void setup_microui(mu_Context& ctx)
 
 int main()
 {
-    mfb_window* window = mfb_open_ex("SandDrawer", kInitialWidth, kInitialHeight, MFB_WF_RESIZABLE);
+    mfb_window* window = mfb_open_ex("SandSketch", kInitialWidth, kInitialHeight, MFB_WF_RESIZABLE);
     if (window == nullptr) {
         return 1;
     }
@@ -79,7 +79,7 @@ int main()
         const int window_width = mfb_get_window_width(window);
         const int window_height = mfb_get_window_height(window);
         if (window_width != renderer.width() || window_height != renderer.height()) {
-            std::fprintf(stderr, "[SandDrawer] resize %dx%d -> %dx%d\n", renderer.width(), renderer.height(), window_width, window_height);
+            std::fprintf(stderr, "[SandSketch] resize %dx%d -> %dx%d\n", renderer.width(), renderer.height(), window_width, window_height);
             renderer.resize(window_width, window_height);
             canvas.resize(canvas_bounds_for(window_width, window_height));
         }
@@ -107,7 +107,7 @@ int main()
         canvas.set_terrain_settings(panel_state.terrain);
 
         if (panel_state.clear_requested) {
-            std::fprintf(stderr, "[SandDrawer] clearing canvas and simulation\n");
+            std::fprintf(stderr, "[SandSketch] clearing canvas and simulation\n");
             canvas.clear();
             simulation.clear();
         }

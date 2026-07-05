@@ -7,7 +7,7 @@ param(
 
 & "$PSScriptRoot\build_and_run.ps1" `
     -Configuration $Configuration `
-    -ProjectRoot "$PSScriptRoot\SandDrawer" `
-    -Target "SandDrawer" `
-    -Executable "SandDrawer.exe" `
+    -ProjectRoot "$PSScriptRoot\SandSketch" `
+    -Target "SandSketch" `
+    -Executable "SandSketch.exe" `
     -NoRun:$NoRun

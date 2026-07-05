@@ -1,5 +1,5 @@
 # cmake_minimum_required(VERSION 3.14)
-# project(SandDrawer LANGUAGES C CXX)
+# project(SandSketch LANGUAGES C CXX)
 
 # set(CMAKE_CXX_STANDARD 23)
 # set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -39,8 +39,8 @@
 
 # target_include_directories(microui_lib PUBLIC ${microui_SOURCE_DIR}/src)
 # target_include_directories(glm_lib PUBLIC ${glm_SOURCE_DIR})
-# target_link_libraries(SandDrawer PRIVATE glm_lib)
-# add_executable(SandDrawer
+# target_link_libraries(SandSketch PRIVATE glm_lib)
+# add_executable(SandSketch
 #     src/main.cpp
 #     src/Renderer.cpp
 #     src/Renderer.h
@@ -56,8 +56,8 @@
 #     src/UI/SandPanel.h
 # )
 
-# target_link_libraries(SandDrawer PRIVATE minifb microui_lib glm::glm)
-# target_include_directories(SandDrawer PRIVATE
+# target_link_libraries(SandSketch PRIVATE minifb microui_lib glm::glm)
+# target_include_directories(SandSketch PRIVATE
 #     src
 #     ${minifb_SOURCE_DIR}/include
 #     ${microui_SOURCE_DIR}/src
@@ -65,7 +65,7 @@
 
 
 cmake_minimum_required(VERSION 3.14)
-project(SandDrawer LANGUAGES C CXX)
+project(SandSketch LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -106,7 +106,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(glm)
 
 # --- Our application ---
-add_executable(SandDrawer
+add_executable(SandSketch
     src/main.cpp
     src/Renderer.cpp
     src/Renderer.h
@@ -123,14 +123,14 @@ add_executable(SandDrawer
     
 )
 
-# target_link_libraries(SandDrawer PRIVATE microui_lib minifb glm::glm)
-# target_include_directories(SandDrawer PRIVATE src ${microui_SOURCE_DIR}/src ${minifb_SOURCE_DIR}/include)
-# target_include_directories(SandDrawer PRIVATE src src/deps/minifb/include)
-target_link_libraries(SandDrawer PRIVATE microui_lib minifb glm::glm)
-target_include_directories(SandDrawer PRIVATE
+# target_link_libraries(SandSketch PRIVATE microui_lib minifb glm::glm)
+# target_include_directories(SandSketch PRIVATE src ${microui_SOURCE_DIR}/src ${minifb_SOURCE_DIR}/include)
+# target_include_directories(SandSketch PRIVATE src src/deps/minifb/include)
+target_link_libraries(SandSketch PRIVATE microui_lib minifb glm::glm)
+target_include_directories(SandSketch PRIVATE
     src
     ${microui_SOURCE_DIR}/src
     ${minifb_SOURCE_DIR}/include
     ${glm_SOURCE_DIR}
 )
-target_compile_definitions(SandDrawer PRIVATE NANORENDER_OBJECTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Objects")
+target_compile_definitions(SandSketch PRIVATE NANORENDER_OBJECTS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Objects")

@@ -17,7 +17,6 @@ SandSketch is an interactive application for creating and sketching procedural s
 ```powershell
 .\build_and_runS.ps1
 ```
-The script builds the project and launches the application automatically.
 
 ## Using the Application
 * Select a Sand Preset to load a complete terrain configuration.
@@ -30,13 +29,43 @@ The script builds the project and launches the application automatically.
 * Click Clear to remove all brush edits.
 
 ## Technical Overview
+SandSketch is a C++ application for generating and sculpting procedural sand terrain in real time. The project is organized into two main modules: Rendering and UI.
 
-The project is written in C++ and consists of the following main components:
 
-* **main.cpp** – Runs the application and handles input.
-* **SandCanvas** – Generates and draws the terrain.
-* **TerrainSettings** – Stores terrain presets and settings.
-* **SandPanel** – Draws the control panel.
-* **Renderer** – Displays the terrain and UI.
+## Project Layout
+SandSketch
+
+
+```text
+SandSketch/
+│
+├── CMakeLists.txt
+├── build_and_runS.ps1
+├── README.md
+│
+├── src/
+├── main.cpp
+├── SandCanvas.*
+├── SandSimulation.*
+├── TerrainSetting.h
+├── ui/
+│   ├── SandPanel.*
+│   └── panel_controls.h
+│
+├── renderer/
+│   ├── Renderer.*
+│   ├── bridge_ui.*
+│   └── microui/
+│
+└── build/
+```
+## Project Structure
+
+- **main.cpp** – Application entry point.
+- **SandCanvas** – Generates and edits the procedural sand terrain.
+- **SandSimulation** – Handles sand simulation and terrain updates.
+- **TerrainSettings** – Terrain presets and configurable parameters.
+- **renderer/** – Rendering system and UI bridge.
+- **ui/** – User interface components and controls.
 
 The application uses procedural noise to generate terrain and applies lighting and color to create the final sand appearance. It uses **MiniFB** for the window, **microui** for the interface, **GLM** for math, and **CMake** for building the project.

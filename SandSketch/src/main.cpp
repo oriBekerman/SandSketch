@@ -1,9 +1,9 @@
 #include "MiniFB.h"
-#include "Renderer.h"
+#include "renderer/Renderer.h"
 #include "SandCanvas.h"
 #include "SandSimulation.h"
 #include "UI/SandPanel.h"
-#include "ui_bridge.h"
+#include "renderer/ui_bridge.h"
 
 #include <algorithm>
 #include <cstdio>

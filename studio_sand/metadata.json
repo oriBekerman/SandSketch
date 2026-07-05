@@ -1,6 +1,0 @@
-{
-  "name": "Sand Drawing Simulator",
-  "description": "An interactive, satisfying Sand Drawing Simulator and digital Zen Garden with real-time granular physics, avalanches, heightmap lighting, and customizable sculpting tools.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

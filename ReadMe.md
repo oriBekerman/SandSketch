@@ -69,3 +69,32 @@ SandSketch/
 - **ui/** – User interface components and controls.
 
 The application uses procedural noise to generate terrain and applies lighting and color to create the final sand appearance. It uses **MiniFB** for the window, **microui** for the interface, **GLM** for math, and **CMake** for building the project.
+
+## Screenshots
+<u> **UI Overview:** </u><br>
+<img src="./SandSketch/assets/ui-overview.png" width="1000"> 
+
+<u>**Preset Comparison:**</u><br>
+<img src="./SandSketch/assets/terrain_types.png" width="1200">
+
+<u>**Pattern Comparison:**</u><br>
+<img src="./SandSketch/assets/pattern_types.png" width="1000">
+
+<u>**Frequancy:**</u><br>
+<img src="./SandSketch/assets/Freq.png" width="1200">
+
+<u> **Amplitude:** </u><br>
+<img src="./SandSketch/assets/amplitude.png" width="1200">
+
+<u>**Specular Strength:**</u><br>
+<img src="./SandSketch/assets/spec_low_high.png" width="1200">
+
+<u>**pattern scale:**</u><br>
+<img src="./SandSketch/assets/pattern_scale.png" width="1200">
+
+## Demo
+
+**Skatching demonstration:**
+https://github.com/user-attachments/assets/62b04bdb-b423-426d-8694-3347b1160f32
+
+

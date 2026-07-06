@@ -7,21 +7,25 @@ namespace {
 constexpr int kPanelPadding = 12;
 constexpr int kPanelMinWidth = 224;
 constexpr int kPanelMaxWidth = 320;
-constexpr float kCraterMinPatternScale = 0.35f;
-constexpr float kMaxFrequency = 0.30f;
-constexpr float kMaxAmplitude = 0.55f;
-constexpr float kMaxPersistence = 0.50f;
-constexpr float kMaxLacunarity = 3.39f;
-constexpr float kMaxPatternStrength = 1.31f;
-constexpr float kMaxPatternScale = 1.36f;
-constexpr float kMaxMoisture = 0.63f;
-constexpr float kMaxCraterSpacing = 0.65f;
-constexpr float kMaxCraterSize = 0.60f;
-constexpr float kMaxCraterDepth = 0.22f;
-constexpr float kMaxGrainStrength = 2.17f;
-constexpr float kMaxShadowStrength = 1.38f;
-constexpr float kMaxSpecularStrength = 1.36f;
-constexpr float kMaxDiffuseStrength = 1.04f;
+// constexpr float kCraterMinPatternScale = 0.35f;
+// constexpr float kMaxFrequency = 0.30f;
+// constexpr float kMaxAmplitude = 0.55f;
+// constexpr float kMaxPersistence = 0.50f;
+// constexpr float kMaxLacunarity = 3.39f;
+
+// constexpr float kMaxPatternStrength = 1.31f;
+// constexpr float kMaxPatternScale = 1.36f;
+
+// constexpr float kMaxMoisture = 0.63f;
+
+// constexpr float kMaxCraterSpacing = 0.65f;
+// constexpr float kMaxCraterSize = 0.60f;
+// constexpr float kMaxCraterDepth = 0.22f;
+
+// constexpr float kMaxGrainStrength = 2.17f;
+// constexpr float kMaxShadowStrength = 1.38f;
+// constexpr float kMaxSpecularStrength = 1.36f;
+// constexpr float kMaxDiffuseStrength = 1.04f;
 
 void sync_retained_window_rect(mu_Context* ctx, const char* title, mu_Rect rect)
 {
@@ -197,19 +201,19 @@ void SandPanel::draw(mu_Context* ctx, SandPanelState& state, int viewport_width,
 
         panel_controls::label(ctx, "Terrain Settings");
         const float previous_frequency = state.terrain.frequency;
-        if (panel_controls::draw_slider(ctx, "Frequency", &state.terrain.frequency, 0.02f, kMaxFrequency)) {
+        if (panel_controls::draw_slider(ctx, "Frequency", &state.terrain.frequency, 0.0f, 1.0f)) {
             log_float_change("Frequency", previous_frequency, state.terrain.frequency);
         }
         const float previous_amplitude = state.terrain.amplitude;
-        if (panel_controls::draw_slider(ctx, "Amplitude", &state.terrain.amplitude, 0.0f, kMaxAmplitude)) {
+        if (panel_controls::draw_slider(ctx, "Amplitude", &state.terrain.amplitude, 0.0f, 2.0f)) {
             log_float_change("Amplitude", previous_amplitude, state.terrain.amplitude);
         }
         const float previous_persistence = state.terrain.persistence;
-        if (panel_controls::draw_slider(ctx, "Persistence", &state.terrain.persistence, 0.0f, kMaxPersistence)) {
+        if (panel_controls::draw_slider(ctx, "Persistence", &state.terrain.persistence, 0.0f, 1.0f)) {
             log_float_change("Persistence", previous_persistence, state.terrain.persistence);
         }
         const float previous_lacunarity = state.terrain.lacunarity;
-        if (panel_controls::draw_slider(ctx, "Lacunarity", &state.terrain.lacunarity, 1.0f, kMaxLacunarity)) {
+        if (panel_controls::draw_slider(ctx, "Lacunarity", &state.terrain.lacunarity, 1.0f, 4.0f)) {
             log_float_change("Lacunarity", previous_lacunarity, state.terrain.lacunarity);
         }
         const bool previous_vignette = state.terrain.vignette;
@@ -226,47 +230,47 @@ void SandPanel::draw(mu_Context* ctx, SandPanelState& state, int viewport_width,
             mu_end_treenode(ctx);
         }
         const float previous_pattern_strength = state.terrain.pattern_strength;
-        if (panel_controls::draw_slider(ctx, "Pattern Strength", &state.terrain.pattern_strength, 0.0f, kMaxPatternStrength)) {
+        if (panel_controls::draw_slider(ctx, "Pattern Strength", &state.terrain.pattern_strength, 0.0f, 2.0f)) {
             log_float_change("Pattern Strength", previous_pattern_strength, state.terrain.pattern_strength);
         }
         const float previous_pattern_scale = state.terrain.pattern_scale;
-        if (panel_controls::draw_slider(ctx, "Pattern Scale", &state.terrain.pattern_scale, kCraterMinPatternScale, kMaxPatternScale)) {
+        if (panel_controls::draw_slider(ctx, "Pattern Scale", &state.terrain.pattern_scale, 0.1f, 2.0f)) {
             log_float_change("Pattern Scale", previous_pattern_scale, state.terrain.pattern_scale);
         }
         if (state.terrain.surface_pattern == SurfacePattern::Craters) {
             const float previous_crater_spacing = state.terrain.crater_spacing;
-            if (panel_controls::draw_slider(ctx, "Crater Spacing", &state.terrain.crater_spacing, 0.45f, kMaxCraterSpacing)) {
+            if (panel_controls::draw_slider(ctx, "Crater Spacing", &state.terrain.crater_spacing, 0.45f, 1.0f)) {
                 log_float_change("Crater Spacing", previous_crater_spacing, state.terrain.crater_spacing);
             }
             const float previous_crater_size = state.terrain.crater_size;
-            if (panel_controls::draw_slider(ctx, "Crater Size", &state.terrain.crater_size, 0.18f, kMaxCraterSize)) {
+            if (panel_controls::draw_slider(ctx, "Crater Size", &state.terrain.crater_size, 0.18f, 1.0f)) {
                 log_float_change("Crater Size", previous_crater_size, state.terrain.crater_size);
             }
             const float previous_crater_depth = state.terrain.crater_depth;
-            if (panel_controls::draw_slider(ctx, "Crater Depth", &state.terrain.crater_depth, 0.0f, kMaxCraterDepth)) {
+            if (panel_controls::draw_slider(ctx, "Crater Depth", &state.terrain.crater_depth, 0.0f, 1.0f)) {
                 log_float_change("Crater Depth", previous_crater_depth, state.terrain.crater_depth);
             }
         }
         const float previous_moisture = state.terrain.moisture;
-        if (panel_controls::draw_slider(ctx, "Moisture", &state.terrain.moisture, 0.0f, kMaxMoisture)) {
+        if (panel_controls::draw_slider(ctx, "Moisture", &state.terrain.moisture, 0.0f, 1.0f)) {
             log_float_change("Moisture", previous_moisture, state.terrain.moisture);
         }
 
         if (mu_begin_treenode_ex(ctx, "Material Tuning", 0)) {
             const float previous_grain_strength = state.terrain.material.grain_strength;
-            if (panel_controls::draw_slider(ctx, "Grain Strength", &state.terrain.material.grain_strength, 0.0f, kMaxGrainStrength)) {
+            if (panel_controls::draw_slider(ctx, "Grain Strength", &state.terrain.material.grain_strength, 0.0f, 3.0f)) {
                 log_float_change("Grain Strength", previous_grain_strength, state.terrain.material.grain_strength);
             }
             const float previous_shadow_strength = state.terrain.material.shadow_strength;
-            if (panel_controls::draw_slider(ctx, "Shadow Strength", &state.terrain.material.shadow_strength, 0.0f, kMaxShadowStrength)) {
+            if (panel_controls::draw_slider(ctx, "Shadow Strength", &state.terrain.material.shadow_strength, 0.0f, 2.0f)) {
                 log_float_change("Shadow Strength", previous_shadow_strength, state.terrain.material.shadow_strength);
             }
             const float previous_specular_strength = state.terrain.material.specular_strength;
-            if (panel_controls::draw_slider(ctx, "Specular", &state.terrain.material.specular_strength, 0.0f, kMaxSpecularStrength)) {
+            if (panel_controls::draw_slider(ctx, "Specular", &state.terrain.material.specular_strength, 0.0f, 2.0f)) {
                 log_float_change("Specular", previous_specular_strength, state.terrain.material.specular_strength);
             }
             const float previous_diffuse_strength = state.terrain.material.diffuse_strength;
-            if (panel_controls::draw_slider(ctx, "Diffuse Strength", &state.terrain.material.diffuse_strength, 0.0f, kMaxDiffuseStrength)) {
+            if (panel_controls::draw_slider(ctx, "Diffuse Strength", &state.terrain.material.diffuse_strength, 0.0f, 2.0f)) {
                 log_float_change("Diffuse Strength", previous_diffuse_strength, state.terrain.material.diffuse_strength);
             }
             mu_end_treenode(ctx);
